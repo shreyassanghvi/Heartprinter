@@ -37,6 +37,8 @@ POA:
 #### Possible tests
 Dynamixel XC330-T288-T
 Dynamixel XC430-T150BB-T
+
+Dynamixel SDK - *https://emanual.robotis.com/docs/en/dxl/dxl-quick-start-guide/#dynamixel-sdk*
 ### Softwares
 - Dynamixel 2.0 Software for motor config: https://emanual.robotis.com/docs/en/software/dynamixel/dynamixel_wizard2/
 - Stm32 CubeIDE: https://www.st.com/en/development-tools/stm32cubeide.html
