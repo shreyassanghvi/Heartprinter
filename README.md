@@ -50,5 +50,3 @@ Link: *https://www.st.com/en/microcontrollers-microprocessors/stm32f103rb.html*
 ### Variable voltage from ATX PSU
 * https://www.amazon.com/CHENBO-Benchtop-Computer-Breakout-Adapter/dp/B07S91NQL3?sr=8-6
 * https://www.amazon.com/HLT-Breakout-Adjustable-Voltage-Maximum/dp/B0CKX9QL1G?sr=8-13
-
-### Video tutorial for motors
