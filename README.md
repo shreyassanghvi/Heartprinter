@@ -34,11 +34,19 @@ POA:
 * Encoder: Absolute
 * Comms: TTL/RS-485
 
-*Dynamixel 2.0 Software for motor config:* https://emanual.robotis.com/docs/en/software/dynamixel/dynamixel_wizard2/
-
+#### Possible tests
+Dynamixel XC330-T288-T
+Dynamixel XC430-T150BB-T
+### Softwares
+- Dynamixel 2.0 Software for motor config: https://emanual.robotis.com/docs/en/software/dynamixel/dynamixel_wizard2/
+- Stm32 CubeIDE: https://www.st.com/en/development-tools/stm32cubeide.html
+- Altimum PCB: https://www.altium.com/products/downloads
+- Arm Keil uVision: https://www.keil.com/download/
 ### STM32F103RBT6
 Link: *https://www.st.com/en/microcontrollers-microprocessors/stm32f103rb.html*
 
 ### Variable voltage from ATX PSU
 * https://www.amazon.com/CHENBO-Benchtop-Computer-Breakout-Adapter/dp/B07S91NQL3?sr=8-6
 * https://www.amazon.com/HLT-Breakout-Adjustable-Voltage-Maximum/dp/B0CKX9QL1G?sr=8-13
+
+### Video tutorial for motors
