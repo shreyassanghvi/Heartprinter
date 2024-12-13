@@ -36,6 +36,7 @@ POA:
 
 #### Possible tests
 Dynamixel XC330-T288-T
+
 Dynamixel XC430-T150BB-T
 
 Dynamixel SDK - *https://emanual.robotis.com/docs/en/dxl/dxl-quick-start-guide/#dynamixel-sdk*
