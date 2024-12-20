@@ -1,6 +1,6 @@
 # File structure
 
 ## how to run the file
- *TODO: add this*
+ * TODO: add this
 
 ## This code is only compiled for Linux, so it is not compatible with other OS. In order to make it compatible with other OS, please update the Makefiles and compile it again.
