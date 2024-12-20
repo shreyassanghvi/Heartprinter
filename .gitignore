@@ -1,3 +1,7 @@
 *.exe
 /.idea/
 /code/DynamixelSDK/
+*.o
+*.a
+*.so
+*.lo

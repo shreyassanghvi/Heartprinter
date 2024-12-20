@@ -39,7 +39,11 @@ Dynamixel XC330-T288-T
 
 Dynamixel XC430-T150BB-T
 
-Dynamixel SDK - *https://emanual.robotis.com/docs/en/dxl/dxl-quick-start-guide/#dynamixel-sdk*
+  * Dynamixel SDK - *https://emanual.robotis.com/docs/en/dxl/dxl-quick-start-guide/#dynamixel-sdk*
+
+    * Dynamixel SDK git - *https://github.com/ROBOTIS-GIT/DynamixelSDK/tree/main*
+    * install steps for the sdk (CPP) - *https://emanual.robotis.com/docs/en/software/dynamixel/dynamixel_sdk/library_setup/cpp_linux/#cpp-linux*
+        * this has all install steps for the sdk (cross-platform)
 ### Softwares
 - Dynamixel 2.0 Software for motor config: https://emanual.robotis.com/docs/en/software/dynamixel/dynamixel_wizard2/
 - Stm32 CubeIDE: https://www.st.com/en/development-tools/stm32cubeide.html
