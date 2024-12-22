@@ -29,38 +29,37 @@ DIR_DXL    = ..
 DIR_OBJS   = .objects
 
 # compiler options
-CC          = gcc
-CX          = g++
-CCFLAGS     = -O2 -O3 -DLINUX -D_GNU_SOURCE -Wall $(INCLUDES) $(FORMAT) -g
-CXFLAGS     = -O2 -O3 -DLINUX -D_GNU_SOURCE -Wall $(INCLUDES) $(FORMAT) -g
-LNKCC       = $(CX)
-LNKFLAGS    = $(CXFLAGS) #-Wl,-rpath,$(DIR_THOR)/lib
-FORMAT      = -m64
+CXX         = g++
+CXXFLAGS    = -O2 -O3 -DLINUX -D_GNU_SOURCE -fPIC -pthread -Wall $(INCLUDES) -m64 -g
+LDFLAGS     = $(CXXFLAGS)
+CLLIBS      = /usr/lib64/ATC3DGlib64.so
 
 #---------------------------------------------------------------------
 # Core components (all of these are likely going to be needed)
 #---------------------------------------------------------------------
 INCLUDES   += -I$(DIR_DXL)/include/dynamixel_sdk
 INCLUDES   += -I$(DIR_DXL)/include/custom
+INCLUDES   += -I/opt/3DGuidance.Rev.E.64/3DGuidanceAPI
 LIBRARIES  += -ldxl_x64_cpp
 LIBRARIES  += -lrt
+LIBRARIES  += $(CLLIBS)
 
 #---------------------------------------------------------------------
 # Files
 #---------------------------------------------------------------------
-SOURCES = ./Motor.cpp \
-			./init.cpp \
+SOURCES = ./src/custom/Motor.cpp \
+          ./src/custom/init.cpp \
+          ./src/custom/Sample.cpp \
     # *** OTHER SOURCES GO HERE ***
 
-OBJECTS  = $(addsuffix .o,$(addprefix $(DIR_OBJS)/,$(basename $(notdir $(SOURCES)))))
-#OBJETCS += *** ADDITIONAL STATIC LIBRARIES GO HERE ***
-
+OBJECTS  = $(addprefix $(DIR_OBJS)/,$(notdir $(SOURCES:.cpp=.o)))
+#OBJECTS += *** ADDITIONAL STATIC LIBRARIES GO HERE ***
 
 #---------------------------------------------------------------------
 # Compiling Rules
 #---------------------------------------------------------------------
 $(TARGET): make_directory $(OBJECTS)
-	$(LNKCC) $(LNKFLAGS) $(OBJECTS) -o $(TARGET) $(LIBRARIES)
+	$(CXX) $(LDFLAGS) $(OBJECTS) -o $(TARGET) $(LIBRARIES)
 
 all: $(TARGET)
 
@@ -68,13 +67,10 @@ clean:
 	rm -rf $(TARGET) $(DIR_OBJS) core *~ *.a *.so *.lo
 
 make_directory:
-	mkdir -p $(DIR_OBJS)/
-
-$(DIR_OBJS)/%.o: ./src/custom/%.c
-	$(CC) $(CCFLAGS) -c $? -o $@
+	mkdir -p $(DIR_OBJS)
 
 $(DIR_OBJS)/%.o: ./src/custom/%.cpp
-	$(CX) $(CXFLAGS) -c $? -o $@
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 #---------------------------------------------------------------------
 # End of Makefile
