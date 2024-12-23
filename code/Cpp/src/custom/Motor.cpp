@@ -70,6 +70,7 @@ int Motor::getDxlPresentPositionValue() const { return motor.DXL_PRESENT_POSITIO
  */
 Motor::Motor(const int id, const std::string &motorType) {
     this->motor.DXL_ID = id;
+
     if (motorType == "X_SERIES" || motorType == "MX_SERIES") {
         this->motor.ADDR_TORQUE_ENABLE = 64;
         this->motor.ADDR_GOAL_POSITION = 116;
@@ -96,6 +97,7 @@ Motor::Motor(const int id, const std::string &motorType) {
         this->motor.DXL_MINIMUM_POSITION_VALUE = -150000;
         this->motor.DXL_MAXIMUM_POSITION_VALUE = 150000;
     }
+
 }
 /**
  * @brief Enable the torque of the motor.

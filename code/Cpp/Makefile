@@ -23,7 +23,7 @@
 #---------------------------------------------------------------------
 
 # *** ENTER THE TARGET NAME HERE ***
-TARGET      = init
+TARGET      = system.run
 # important directories used by assorted rules and other variables
 DIR_DXL    = ..
 DIR_OBJS   = .objects
@@ -49,7 +49,7 @@ LIBRARIES  += $(CLLIBS)
 #---------------------------------------------------------------------
 SOURCES = ./src/custom/Motor.cpp \
           ./src/custom/init.cpp \
-          ./src/custom/Sample.cpp \
+         # ./src/custom/Sample.cpp \
     # *** OTHER SOURCES GO HERE ***
 
 OBJECTS  = $(addprefix $(DIR_OBJS)/,$(notdir $(SOURCES:.cpp=.o)))

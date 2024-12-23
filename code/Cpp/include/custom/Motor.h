@@ -3,6 +3,8 @@
 
 #include <string>
 #include "../include/dynamixel_sdk/dynamixel_sdk.h"
+#include "../include/dynamixel_sdk/port_handler_linux.h"
+
 #define TORQUE_ENABLE                   1                   // Value for enabling the torque
 #define TORQUE_DISABLE                  0                   // Value for disabling the torque
 #define DXL_MOVING_STATUS_THRESHOLD     5                  // DYNAMIXEL moving status threshold
