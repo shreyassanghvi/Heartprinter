@@ -29,7 +29,7 @@
 #define ESC_ASCII_VALUE                 0x1b                // ASCII value for the ESC key
 
 //user defined #define
-#define RECORD_CNT                      100                 // Number of records to collect
+#define RECORD_CNT                      500                 // Number of records to collect
 
 
 // Initialize PortHandler instance
@@ -929,25 +929,7 @@ DOUBLE_POSITION_ANGLES_RECORD readATI(short sensID) {
 }
 
 int main(int argc, char *argv[]) {
-    // initTxRx();
-    // // collect as many records as specified in the command line
-    // printf("\n\n");
-    // printf("Collect %4d Data records from Sensors\n",RECORD_CNT);
-    // printf("=====================================\n");
-    // printf("Note: Metric mode was selected, position is in mm.\n");
-    // printf("      -----------\n");
-    // for (int i = 0; i < RECORD_CNT; i++) {
-    //     short sensorID = 0;
-    //     DOUBLE_POSITION_ANGLES_RECORD retRecord = readATI(sensorID);
-    //     printf("%4d [%d] %8.3f %8.3f %8.3f: %8.2f %8.2f %8.2f\n",
-    //            i + 1,
-    //            sensorID,
-    //            retRecord.x, retRecord.y, retRecord.z,
-    //            retRecord.a, retRecord.e, retRecord.r
-    //     );
-    // }
-    //
-    // cleanUpAndExit();
+    initTxRx();
     Motor motors[] = {Motor(1), Motor(2), Motor(3)};
     int cntMotor = sizeof(motors) / sizeof(Motor);
     if (initMotors(motors, cntMotor) != EXIT_SUCCESS) {
@@ -957,17 +939,61 @@ int main(int argc, char *argv[]) {
     int dxl_comm_result = COMM_TX_FAIL; // Communication result
     int dxl_goal_position[2] = {DXL_MINIMUM_POSITION_VALUE, static_cast<int>((DXL_MAXIMUM_POSITION_VALUE * 1.5))};
     uint8_t dxl_error = 0; // Dynamixel error
-    while (true) {
-        printf("Press any key to continue! (or press ESC to quit!)\n");
-        if (getch() == ESC_ASCII_VALUE)
-            break;
+    // collect as many records as specified in the command line
+    printf("\n\n");
+    printf("Collect %4d Data records from Sensors\n",RECORD_CNT);
+    printf("=====================================\n");
+    printf("Note: Metric mode was selected, position is in mm.\n");
+    for (int j = 0; j < cntMotor; j++) {
+        if (motors[j].addGroupSyncWrite(&groupSyncWrite, DXL_MINIMUM_POSITION_VALUE) != true) {
+            return EXIT_FAILURE;
+        }
+    }
+    dxl_comm_result = groupSyncWrite.txPacket();
+    if (dxl_comm_result != COMM_SUCCESS) printf("%s\n", packetHandler->getTxRxResult(dxl_comm_result));
+    printf("      -----------\n");
+    for (int i = 0; i < RECORD_CNT; i++) {
+        short sensorID = 0;
+        DOUBLE_POSITION_ANGLES_RECORD retRecord = readATI(sensorID);
+        printf("%4d [%d] %8.3f %8.3f %8.3f: %8.2f %8.2f %8.2f\n",
+               i + 1,
+               sensorID,
+               retRecord.x, retRecord.y, retRecord.z,
+               retRecord.a, retRecord.e, retRecord.r
+        );
+        // while (true) {
+        // printf("Press any key to continue! (or press ESC to quit!)\n");
+        // if (getch() == ESC_ASCII_VALUE)
+        //     break;
         // Add Dynamixel#1 goal position value to the Syncwrite storage
-        for (int i = 0; i < cntMotor; i++) {
-            if (motors[i].addGroupSyncWrite(&groupSyncWrite, dxl_goal_position[index]) != true) {
-                return EXIT_FAILURE;
+        int motorPos[3] = {1, 2, 3};
+        if (retRecord.x < 30) {
+            motorPos[0] = dxl_goal_position[0];
+        }
+        else {
+            motorPos[0] = dxl_goal_position[1];
+        }
+        if (retRecord.y < 30) {
+            motorPos[1] = dxl_goal_position[0];
+        }
+        else {
+            motorPos[1] = dxl_goal_position[1];
+        }
+        if (retRecord.z < 30) {
+            motorPos[2] = dxl_goal_position[0];
+        }
+        else {
+            motorPos[2] = dxl_goal_position[1];
+        }
+
+
+        for (int j = 0; j < cntMotor; j++) {
+            if (motors[j].addGroupSyncWrite(&groupSyncWrite, motorPos[index]) != true) {
+                printf("GroupSyncWrite addGroupSyncWrite failed!\n");
+                break;
             }
         }
-        // // Add Dynamixel#2 goal position value to the Syncwrite parameter storage
+        // Add Dynamixel#2 goal position value to the Syncwrite parameter storage
         // if (dxl2.addGroupSyncWrite(&groupSyncWrite, dxl_goal_position[index]) != true) {
         //     return EXIT_FAILURE;
         // }
@@ -996,16 +1022,20 @@ int main(int argc, char *argv[]) {
             }
 
             for (int i = 0; i < cntMotor; i++) {
-                printf("[ID:%03d] GoalPos:%03d  PresPos:%03d\t", motors[i].getMotorID(),
-                       dxl_goal_position[index], motors[i].checkAndGetPresentPosition(&groupSyncRead));
+                // printf("[ID:%03d] GoalPos:%03d  PresPos:%03d\t", motors[i].getMotorID(),
+                       // dxl_goal_position[index], motors[i].checkAndGetPresentPosition(&groupSyncRead));
                 exitFlag &= motors[i].checkIfAtGoalPosition(dxl_goal_position[index]);
             }
-            printf("\n");
+            // printf("\n");
         } while (exitFlag);
-
-        // Change goal position
-        index = (index + 1) % 2;
+        //
+        // // Change goal position
+        // index = (index + 1) % 2;
     }
+
+    cleanUpAndExit();
+
+
     for (int i = 0; i < cntMotor; i++) {
         // // Disable Dynamixel#1 Torque
         motors[i].disableTorque(packetHandler, portHandler);

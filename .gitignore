@@ -8,3 +8,6 @@
 *.run
 /code/Cpp/cmake-build-debug/
 /code/Cpp/.objects/
+/code/Cpp/build/
+/code/Cpp/example/
+/code/Cpp/trackstar_examples/
