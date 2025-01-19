@@ -77,6 +77,7 @@ typedef DynamixelMotor DynamixelMotor;
 
 class Motor {
 public:
+    Motor();
     Motor(int id);
 
     // Add other public members as needed
