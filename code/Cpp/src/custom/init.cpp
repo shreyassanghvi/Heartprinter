@@ -1,23 +1,7 @@
 //
-// Created by shreyas on 12/19/24.
+// Created by Shreyas on 12/19/24.
 //
-#if defined(__linux__) || defined(__APPLE__)
-#include <fcntl.h>
-#include <termios.h>
-#define STDIN_FILENO 0
-#elif defined(_WIN32) || defined(_WIN64)
-#include <conio.h>
-#endif
-//ATI Trackstar headers
-#include "../../include/custom/StdAfx.h"
-#include "../../include/custom/ATC3DG.h"
-#include "../../include/custom/Sample2.h"
-//Motor SDK Headers
-#include "../../src/DynamixelSDK.h"
-// userdefined headers
-#include <cstring>
-
-#include "../../include/custom/Motor.h"
+#include "../../include/custom/init.h"
 
 // #define for various definitions for the DYNAMIXEL
 #define PROTOCOL_VERSION                2.0                 // See which protocol version is used in the DYNAMIXEL
@@ -31,20 +15,6 @@
 //user defined #define
 #define RECORD_CNT                      500                 // Number of records to collect
 #define MOTOR_CNT                       3                   // Number of motors to control
-
-enum STATES {
-    START,
-    INIT_MOTORS,
-    INIT_TRACKSTAR,
-    INIT_LOADCELL,
-    READ_TRACKSTAR,
-    READ_LOADCELL,
-    MOVE_MOTORS,
-    ERROR,
-    CLEANUP_MOTORS,
-    CLEANUP_TRACKSTAR,
-    END
-};
 
 // Initialize PortHandler instance
 // Set the port path
@@ -208,19 +178,13 @@ int initMotors(const std::vector<Motor> &motors, int cntMotor) {
         return EXIT_FAILURE;
     }
     dxl_error = 0;
-    for (int i = 0; i < cntMotor; i++) {
-        motors[i].setMotorOperationMode(packetHandler, portHandler, EXTENDED_POSITION_CONTROL_MODE);
+    for (auto &motor: motors) {
+        motor.setMotorOperationMode(packetHandler, portHandler, EXTENDED_POSITION_CONTROL_MODE);
         // Enable Dynamixel#i Torque
-        dxl_error += motors[i].enableTorque(packetHandler, portHandler);
+        dxl_error += motor.enableTorque(packetHandler, portHandler);
     }
     if (dxl_error != 0) {
         return EXIT_FAILURE;
-    }
-    for (int i = 0; i < cntMotor; i++) {
-        // Add parameter storage for Dynamixel#1 present position value
-        if (groupSyncRead.addParam(motors[i].getMotorID()) != true) {
-            return EXIT_FAILURE;
-        }
     }
     return EXIT_SUCCESS;
 }
@@ -951,11 +915,12 @@ int main(int argc, char *argv[]) {
     // Motor motors[MOTOR_CNT];
     std::vector<Motor> vMotors;
     int dxl_comm_result; // Communication result
-    // int dxl_goal_position[2];
+    int dxl_goal_position[2];
     uint8_t dxl_error; // Dynamixel error
     long data_count;
     int ERROR_FLG;
     short sensorID;
+    int motor_destination[MOTOR_CNT];
     DOUBLE_POSITION_ANGLES_RECORD retRecord;
     while (true) {
         switch (state) {
@@ -970,31 +935,52 @@ int main(int argc, char *argv[]) {
                 break;
             case INIT_MOTORS:
 
-                // Init motors
+                //setup motor vector and init motors
                 for (int i = 0; i < MOTOR_CNT; i++) {
-                    vMotors.push_back(Motor(i));
+                    vMotors.emplace_back(i);
+                    motor_destination[i] = 0;
                 }
             //init communication variables
                 dxl_comm_result = COMM_TX_FAIL; // Communication result
-            // dxl_goal_position[0] = DXL_MINIMUM_POSITION_VALUE;
-            // dxl_goal_position[1] = static_cast<int>(DXL_MAXIMUM_POSITION_VALUE * 1.5);
+                dxl_goal_position[0] = DXL_MINIMUM_POSITION_VALUE;
+                dxl_goal_position[1] = static_cast<int>(DXL_MAXIMUM_POSITION_VALUE * 1.5);
                 dxl_error = 0; // Dynamixel error
                 if (initMotors(vMotors, MOTOR_CNT) != EXIT_SUCCESS) {
-                    return EXIT_FAILURE;
+                    printf("Failed to init motors\n");
+                    state = ERROR;
+                    break;
                 }
-                for (int j = 0; j < MOTOR_CNT; j++) {
-                    if (vMotors[j].addGroupSyncWrite(&groupSyncWrite, DXL_MINIMUM_POSITION_VALUE) != true) {
-                        return EXIT_FAILURE;
+                for (auto &motor: vMotors) {
+                    if (motor.addGroupSyncWrite(&groupSyncWrite, dxl_goal_position[0]) != true) {
+                        printf("Failed to add parameter to groupSyncWrite for motor#%2d\n", motor.getMotorID());
+                        state = ERROR;
+                        break;
                     }
+                }
+
+                if (state == ERROR) {
+                    break;
                 }
                 dxl_comm_result = groupSyncWrite.txPacket();
                 if (dxl_comm_result != COMM_SUCCESS) {
                     printf("%s\n", packetHandler->getTxRxResult(dxl_comm_result));
                     state = ERROR;
+                    break;
                 }
+                groupSyncWrite.clearParam();
                 state = READ_TRACKSTAR;
 
                 break;
+            case INIT_LOADCELL:
+                state = ERROR;
+
+                printf("init Loadcell not implemented\n");
+                break;
+            case READ_LOADCELL:
+                state = ERROR;
+                printf("read Loadcell  not implemented\n");
+                break;
+
             case READ_TRACKSTAR:
                 if (data_count == 0) {
                     // collect as many records as specified in the command line
@@ -1013,32 +999,118 @@ int main(int argc, char *argv[]) {
                        retRecord.a, retRecord.e, retRecord.r
                 );
                 data_count++;
+
+                state = SET_MOTOR;
+
+                break;
+            case SET_MOTOR:
+                if (retRecord.x < 30) {
+                    motor_destination[0] = dxl_goal_position[1];
+                } else {
+                    motor_destination[0] = dxl_goal_position[0];
+                }
+                if (retRecord.y < 30) {
+                    motor_destination[1] = dxl_goal_position[1];
+                } else {
+                    motor_destination[1] = dxl_goal_position[0];
+                }
+                if (retRecord.z < 30) {
+                    motor_destination[2] = dxl_goal_position[1];
+                } else {
+                    motor_destination[2] = dxl_goal_position[0];
+                }
                 if (data_count == RECORD_CNT) {
+                    printf("end: Collect %4ld Data records from Sensors\n", data_count);
                     state = END;
+                } else {
+                    state = MOVE_MOTORS;
                 }
                 break;
-            case ERROR:
-                ERROR_FLG = 1;
-                state = END;
-                break;
-            case END:
+            case MOVE_MOTORS:
 
                 for (auto motor: vMotors) {
-                    // // Disable Dynamixel#1 Torque
-                    motor.disableTorque(packetHandler, portHandler);
+                    if (motor.addGroupSyncWrite(&groupSyncWrite, motor_destination[motor.getMotorID()]) != true) {
+                        state = ERROR;
+                        break;
+                    }
                 }
 
-            // delete[] motors;
-                cleanUpAndExit();
+                dxl_comm_result = groupSyncWrite.txPacket();
+                if (dxl_comm_result != COMM_SUCCESS) {
+                    printf("%s\n", packetHandler->getTxRxResult(dxl_comm_result));
+                    state = ERROR;
+                }
+                groupSyncWrite.clearParam();
+                if (state == ERROR) {
+                    break;
+                }
+
+
+                bool exitFlag;
+                dxl_error = 0;
+                do {
+                    // Syncread present position
+                    dxl_comm_result = groupSyncRead.txRxPacket();
+                    exitFlag = true;
+                    for (int i = 0; i < MOTOR_CNT; i++) {
+                        if (dxl_comm_result != COMM_SUCCESS) {
+                            printf("%s\n", packetHandler->getTxRxResult(dxl_comm_result));
+                        } else {
+                            if (groupSyncRead.getError(vMotors[i].getMotorID(), &dxl_error)) {
+                                printf("[ID:%03d] %s\n", vMotors[i].getMotorID(),
+                                       packetHandler->getRxPacketError(dxl_error));
+                            }
+                        }
+                    }
+
+                    for (int i = 0; i < MOTOR_CNT; i++) {
+                        // printf("[ID:%03d] GoalPos:%03d  PresPos:%03d\t", motors[i].getMotorID(),
+                        // dxl_goal_position[index], motors[i].checkAndGetPresentPosition(&groupSyncRead));
+                        exitFlag &= vMotors[i].checkIfAtGoalPosition(dxl_goal_position[i]);
+                    }
+                    printf("\n");
+                } while (exitFlag);
+                if (state == ERROR) {
+                    break;
+                }
+                if (data_count == RECORD_CNT) {
+                    printf("end: Collect %4ld Data records from Sensors\n", data_count);
+                    state = END;
+                } else {
+                    state = READ_TRACKSTAR;
+                }
+                break;
+
+            case ERROR:
+                ERROR_FLG = 1;
+                dxl_error = 1;
+                state = END;
+                break;
+            case CLEANUP_MOTORS:
+                groupSyncWrite.clearParam();
+                groupSyncRead.clearParam();
+                for (auto motor: vMotors) {
+                    // Disable the Torque of the motors
+                    motor.disableTorque(packetHandler, portHandler);
+                }
+                vMotors.clear();
             // Close port
                 portHandler->closePort();
-                if (ERROR_FLG == 1) {
+                state = CLEANUP_TRACKSTAR;
+                break;
+            case CLEANUP_TRACKSTAR:
+                cleanUpAndExit();
+                if (ERROR_FLG == 1 && dxl_error != 0) {
                     return EXIT_FAILURE;
                 }
                 return EXIT_SUCCESS;
+            case END:
+                state = CLEANUP_MOTORS;
                 break;
+
             default:
                 state = ERROR;
+                break;
         }
     }
 
@@ -1091,30 +1163,30 @@ int main(int argc, char *argv[]) {
     //     if (dxl_comm_result != COMM_SUCCESS) printf("%s\n", packetHandler->getTxRxResult(dxl_comm_result));
     //
     //     // Clear syncwrite parameter storage
-    //     groupSyncWrite.clearParam();
-    //     bool exitFlag;
+    // groupSyncWrite.clearParam();
+    // bool exitFlag;
     //
-    //     dxl_error = 0;
-    //     do {
-    //         // Syncread present position
-    //         dxl_comm_result = groupSyncRead.txRxPacket();
-    //         exitFlag = true;
-    //         for (int i = 0; i < MOTOR_CNT; i++) {
-    //             if (dxl_comm_result != COMM_SUCCESS) {
-    //                 printf("%s\n", packetHandler->getTxRxResult(dxl_comm_result));
-    //             } else {
-    //                 if (groupSyncRead.getError(motors[i].getMotorID(), &dxl_error)) {
-    //                     printf("[ID:%03d] %s\n", motors[i].getMotorID(), packetHandler->getRxPacketError(dxl_error));
-    //                 }
+    // dxl_error = 0;
+    // do {
+    //     // Syncread present position
+    //     dxl_comm_result = groupSyncRead.txRxPacket();
+    //     exitFlag = true;
+    //     for (int i = 0; i < MOTOR_CNT; i++) {
+    //         if (dxl_comm_result != COMM_SUCCESS) {
+    //             printf("%s\n", packetHandler->getTxRxResult(dxl_comm_result));
+    //         } else {
+    //             if (groupSyncRead.getError(motors[i].getMotorID(), &dxl_error)) {
+    //                 printf("[ID:%03d] %s\n", motors[i].getMotorID(), packetHandler->getRxPacketError(dxl_error));
     //             }
     //         }
+    //     }
     //
-    //         for (int i = 0; i < MOTOR_CNT; i++) {
-    //             // printf("[ID:%03d] GoalPos:%03d  PresPos:%03d\t", motors[i].getMotorID(),
-    //             // dxl_goal_position[index], motors[i].checkAndGetPresentPosition(&groupSyncRead));
-    //             exitFlag &= motors[i].checkIfAtGoalPosition(dxl_goal_position[index]);
-    //         }
-    //         // printf("\n");
+    //     for (int i = 0; i < MOTOR_CNT; i++) {
+    //         // printf("[ID:%03d] GoalPos:%03d  PresPos:%03d\t", motors[i].getMotorID(),
+    //         // dxl_goal_position[index], motors[i].checkAndGetPresentPosition(&groupSyncRead));
+    //         exitFlag &= motors[i].checkIfAtGoalPosition(dxl_goal_position[index]);
+    //     }
+    // printf("\n");
     //     } while (exitFlag);
     //     //
     //     // // Change goal position
