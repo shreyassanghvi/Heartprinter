@@ -6,7 +6,7 @@ project(system_run)
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-#set(CLLIBS  /usr/lib64/ATC3DGlib64.so)
+
 # Compiler options
 add_compile_options(-O2 -O3 -DLINUX -D_GNU_SOURCE -fPIC -pthread -Wall -m64 -g)
 
@@ -28,10 +28,10 @@ set(SOURCES
 # Create executable
 add_executable(${PROJECT_NAME} ${SOURCES})
 
-add_library(ATC3DGlib64 SHARED IMPORTED)
-set_target_properties(ATC3DGlib64 PROPERTIES IMPORTED_LOCATION /usr/lib64/ATC3DGlib64.so)
+add_library(ATC3DGlib64 SHARED IMPORTED) #import the library as imported
+set_target_properties(ATC3DGlib64 PROPERTIES IMPORTED_LOCATION /usr/lib64/ATC3DGlib64.so) #set the library path
 
-target_link_libraries(${PROJECT_NAME}
+target_link_libraries(${PROJECT_NAME} # Link the executable to the libraries
         dxl_x64_cpp
         rt
         ATC3DGlib64

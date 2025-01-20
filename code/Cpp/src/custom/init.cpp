@@ -2,16 +2,6 @@
 // Created by Shreyas on 12/19/24.
 //
 #include "../../include/custom/init.h"
-
-// #define for various definitions for the DYNAMIXEL
-#define PROTOCOL_VERSION                2.0                 // See which protocol version is used in the DYNAMIXEL
-#define DEVICENAME                      "/dev/ttyUSB0"      // ex) Windows: "COM1"   Linux: "/dev/ttyUSB0" Mac: "/dev/tty.usbserial-*"
-
-
-
-#define BAUDRATE                        57600
-#define ESC_ASCII_VALUE                 0x1b                // ASCII value for the ESC key
-
 //user defined #define
 #define RECORD_CNT                      500                 // Number of records to collect
 #define MOTOR_CNT                       3                   // Number of motors to control
@@ -854,8 +844,9 @@ void initTxRx() {
 }
 
 void cleanUpAndExit() {
-    int errorCode = SaveSystemConfiguration("newfile.ini");
-    if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
+    int errorCode = 0;
+    // int errorCode = SaveSystemConfiguration("newfile.ini");
+    // if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
 
     //////////////////////////////////////////////////////////////////////////////
     //////////////////////////////////////////////////////////////////////////////
@@ -921,6 +912,7 @@ int main(int argc, char *argv[]) {
     int ERROR_FLG;
     short sensorID;
     int motor_destination[MOTOR_CNT];
+    initTxRx();
     DOUBLE_POSITION_ANGLES_RECORD retRecord;
     while (true) {
         switch (state) {
@@ -928,7 +920,7 @@ int main(int argc, char *argv[]) {
                 state = INIT_TRACKSTAR;
                 break;
             case INIT_TRACKSTAR:
-                initTxRx();
+
                 data_count = 0;
                 ERROR_FLG = 0;
                 state = INIT_MOTORS;
@@ -1049,6 +1041,7 @@ int main(int argc, char *argv[]) {
                 bool exitFlag;
                 dxl_error = 0;
                 do {
+                    groupSyncRead.clearParam();
                     // Syncread present position
                     dxl_comm_result = groupSyncRead.txRxPacket();
                     exitFlag = true;
@@ -1066,19 +1059,16 @@ int main(int argc, char *argv[]) {
                     for (int i = 0; i < MOTOR_CNT; i++) {
                         // printf("[ID:%03d] GoalPos:%03d  PresPos:%03d\t", motors[i].getMotorID(),
                         // dxl_goal_position[index], motors[i].checkAndGetPresentPosition(&groupSyncRead));
-                        exitFlag &= vMotors[i].checkIfAtGoalPosition(dxl_goal_position[i]);
+                        exitFlag &= vMotors[i].checkIfAtGoalPosition(motor_destination[i]);
                     }
-                    printf("\n");
+                    // printf("\n");
                 } while (exitFlag);
                 if (state == ERROR) {
                     break;
                 }
-                if (data_count == RECORD_CNT) {
-                    printf("end: Collect %4ld Data records from Sensors\n", data_count);
-                    state = END;
-                } else {
-                    state = READ_TRACKSTAR;
-                }
+
+                state = READ_TRACKSTAR;
+
                 break;
 
             case ERROR:
@@ -1148,7 +1138,7 @@ int main(int argc, char *argv[]) {
     //
     //
     //     for (int j = 0; j < MOTOR_CNT; j++) {
-    //         if (motors[j].addGroupSyncWrite(&groupSyncWrite, motorPos[index]) != true) {
+    //         if (vMotors[j].addGroupSyncWrite(&groupSyncWrite, motorPos[j]) != true) {
     //             printf("GroupSyncWrite addGroupSyncWrite failed!\n");
     //             break;
     //         }
@@ -1175,8 +1165,8 @@ int main(int argc, char *argv[]) {
     //         if (dxl_comm_result != COMM_SUCCESS) {
     //             printf("%s\n", packetHandler->getTxRxResult(dxl_comm_result));
     //         } else {
-    //             if (groupSyncRead.getError(motors[i].getMotorID(), &dxl_error)) {
-    //                 printf("[ID:%03d] %s\n", motors[i].getMotorID(), packetHandler->getRxPacketError(dxl_error));
+    //             if (groupSyncRead.getError(vMotors[i].getMotorID(), &dxl_error)) {
+    //                 printf("[ID:%03d] %s\n", vMotors[i].getMotorID(), packetHandler->getRxPacketError(dxl_error));
     //             }
     //         }
     //     }
@@ -1184,7 +1174,7 @@ int main(int argc, char *argv[]) {
     //     for (int i = 0; i < MOTOR_CNT; i++) {
     //         // printf("[ID:%03d] GoalPos:%03d  PresPos:%03d\t", motors[i].getMotorID(),
     //         // dxl_goal_position[index], motors[i].checkAndGetPresentPosition(&groupSyncRead));
-    //         exitFlag &= motors[i].checkIfAtGoalPosition(dxl_goal_position[index]);
+    //         exitFlag &= vMotors[i].checkIfAtGoalPosition(dxl_goal_position[0]);
     //     }
     // printf("\n");
     //     } while (exitFlag);
@@ -1192,13 +1182,13 @@ int main(int argc, char *argv[]) {
     //     // // Change goal position
     //     // index = (index + 1) % 2;
     // }
-
+    //
     // cleanUpAndExit();
-
-
+    //
+    //
     // for (int i = 0; i < MOTOR_CNT; i++) {
     //     // // Disable Dynamixel#1 Torque
-    //     motors[i].disableTorque(packetHandler, portHandler);
+    //     vMotors[i].disableTorque(packetHandler, portHandler);
     // }
     //
     //
