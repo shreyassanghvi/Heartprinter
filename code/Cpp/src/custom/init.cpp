@@ -1,5 +1,6 @@
 //
-// Created by shreyas on 12/19/24.
+// Created by shreyas (shsanghv) on 12/19/24.
+//
 //
 #include "../../include/custom/init.h"
 // #define for various definitions for the DYNAMIXEL
@@ -12,10 +13,10 @@
 #define ESC_ASCII_VALUE                 0x1b                // ASCII value for the ESC key
 
 //user defined #define
-#define RECORD_CNT                      1000                 // Number of records to collect
+#define RECORD_CNT                      100                // Number of records to collect
 #define MOTOR_CNT                       3                  // Number of motors to control
 #define SENSOR_ID                       0                  // Sensor ID to use
-
+#define DEBUG_PRINT                     1                  // Print debug messages
 // Initialize PortHandler instance
 // Set the port path
 // Get methods and members of PortHandlerLinux or PortHandlerWindows
@@ -189,7 +190,6 @@ int initMotors(Motor motors) {
 void initTxRx() {
     int errorCode; // used to hold error code returned from procedure call
     int i;
-    int sensorID;
     int transmitterID;
     short id;
 
@@ -394,14 +394,13 @@ void initTxRx() {
     //
     printf("\nGetSensorParameter()");
     printf("\n====================\n");
-    printf("Using sensor ID = 0\n");
-    sensorID = 0;
+    printf("Using sensor ID = %d\n", SENSOR_ID);
     //
     // DATA_FORMAT
     //
     {
         DATA_FORMAT_TYPE buffer, *pBuffer = &buffer;
-        errorCode = GetSensorParameter(sensorID, DATA_FORMAT, pBuffer, sizeof(buffer));
+        errorCode = GetSensorParameter(SENSOR_ID, DATA_FORMAT, pBuffer, sizeof(buffer));
         if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
         printf("DATA_FORMAT: %d\n", buffer);
     }
@@ -410,7 +409,7 @@ void initTxRx() {
     //
     {
         DOUBLE_ANGLES_RECORD buffer, *pBuffer = &buffer;
-        errorCode = GetSensorParameter(sensorID, ANGLE_ALIGN, pBuffer, sizeof(buffer));
+        errorCode = GetSensorParameter(SENSOR_ID, ANGLE_ALIGN, pBuffer, sizeof(buffer));
         if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
         printf("ANGLE_ALIGN: %6.2f, %6.2f, %6.2f\n",
                buffer.a,
@@ -422,7 +421,7 @@ void initTxRx() {
     //
     {
         HEMISPHERE_TYPE buffer, *pBuffer = &buffer;
-        errorCode = GetSensorParameter(sensorID, HEMISPHERE, pBuffer, sizeof(buffer));
+        errorCode = GetSensorParameter(SENSOR_ID, HEMISPHERE, pBuffer, sizeof(buffer));
         if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
         printf("HEMISPHERE: %4x\n", buffer);
     }
@@ -431,7 +430,7 @@ void initTxRx() {
     //
     {
         BOOL buffer, *pBuffer = &buffer;
-        errorCode = GetSensorParameter(sensorID, FILTER_AC_WIDE_NOTCH, pBuffer, sizeof(buffer));
+        errorCode = GetSensorParameter(SENSOR_ID, FILTER_AC_WIDE_NOTCH, pBuffer, sizeof(buffer));
         if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
         printf("FILTER_AC_WIDE_NOTCH: %d\n", buffer);
     }
@@ -440,7 +439,7 @@ void initTxRx() {
     //
     {
         BOOL buffer, *pBuffer = &buffer;
-        errorCode = GetSensorParameter(sensorID, FILTER_AC_NARROW_NOTCH, pBuffer, sizeof(buffer));
+        errorCode = GetSensorParameter(SENSOR_ID, FILTER_AC_NARROW_NOTCH, pBuffer, sizeof(buffer));
         if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
         printf("FILTER_AC_NARROW_NOTCH: %d\n", buffer);
     }
@@ -449,7 +448,7 @@ void initTxRx() {
     //
     {
         double buffer, *pBuffer = &buffer;
-        errorCode = GetSensorParameter(sensorID, FILTER_DC_ADAPTIVE, pBuffer, sizeof(buffer));
+        errorCode = GetSensorParameter(SENSOR_ID, FILTER_DC_ADAPTIVE, pBuffer, sizeof(buffer));
         if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
         printf("FILTER_DC_ADAPTIVE: %5.2f\n", buffer);
     }
@@ -458,7 +457,7 @@ void initTxRx() {
     //
     {
         ADAPTIVE_PARAMETERS buffer, *pBuffer = &buffer;
-        errorCode = GetSensorParameter(sensorID, FILTER_ALPHA_PARAMETERS, pBuffer, sizeof(buffer));
+        errorCode = GetSensorParameter(SENSOR_ID, FILTER_ALPHA_PARAMETERS, pBuffer, sizeof(buffer));
         if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
         printf("FILTER_ALPHA_PARAMETERS:\n");
         printf("    Alpha max   %5d, %5d, %5d, %5d, %5d, %5d, %5d\n",
@@ -495,7 +494,7 @@ void initTxRx() {
     //
     {
         BOOL buffer, *pBuffer = &buffer;
-        errorCode = GetSensorParameter(sensorID, FILTER_LARGE_CHANGE, pBuffer, sizeof(buffer));
+        errorCode = GetSensorParameter(SENSOR_ID, FILTER_LARGE_CHANGE, pBuffer, sizeof(buffer));
         if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
         printf("FILTER_LARGE_CHANGE: %d\n", buffer);
     }
@@ -504,7 +503,7 @@ void initTxRx() {
     //
     {
         QUALITY_PARAMETERS buffer, *pBuffer = &buffer;
-        errorCode = GetSensorParameter(sensorID, QUALITY, pBuffer, sizeof(buffer));
+        errorCode = GetSensorParameter(SENSOR_ID, QUALITY, pBuffer, sizeof(buffer));
         if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
         printf("QUALITY: %d, %d, %d, %d\n",
                buffer.error_offset,
@@ -529,27 +528,26 @@ void initTxRx() {
     //
     printf("\nSetSensorParameter()");
     printf("\n====================\n");
-    printf("Using sensor ID = 0\n");
-    sensorID = 0;
+    printf("Using sensor ID = %\n",SENSOR_ID);
 
     // If we use the macros provided in SAMPLE2.H we can simplify
     // the sensor parameter setting as follows:
 
     printf("DATA_FORMAT:             DOUBLE_POSITION_ANGLES_TIME_STAMP\n");
-    SET_SENSOR_PARAMETER(sensorID, DATA_FORMAT, DOUBLE_POSITION_ANGLES_TIME_STAMP, __LINE__);
+    SET_SENSOR_PARAMETER(SENSOR_ID, DATA_FORMAT, DOUBLE_POSITION_ANGLES_TIME_STAMP, __LINE__);
     printf("ANGLE_ALIGN:             30, 45, 60\n"); {
         // initialize a structure of angles
         DOUBLE_ANGLES_RECORD anglesRecord = {30, 45, 60};
-        SET_SENSOR_PARAMETER(sensorID, ANGLE_ALIGN, anglesRecord, __LINE__);
+        SET_SENSOR_PARAMETER(SENSOR_ID, ANGLE_ALIGN, anglesRecord, __LINE__);
     }
     printf("HEMISPHERE:              TOP\n");
-    SET_SENSOR_PARAMETER(sensorID, HEMISPHERE, TOP, __LINE__);
+    SET_SENSOR_PARAMETER(SENSOR_ID, HEMISPHERE, TOP, __LINE__);
     printf("FILTER_AC_WIDE_NOTCH:    true\n");
-    SET_SENSOR_PARAMETER(sensorID, FILTER_AC_WIDE_NOTCH, true, __LINE__);
+    SET_SENSOR_PARAMETER(SENSOR_ID, FILTER_AC_WIDE_NOTCH, true, __LINE__);
     printf("FILTER_AC_NARROW_NOTCH:  false\n");
-    SET_SENSOR_PARAMETER(sensorID, FILTER_AC_NARROW_NOTCH, false, __LINE__);
+    SET_SENSOR_PARAMETER(SENSOR_ID, FILTER_AC_NARROW_NOTCH, false, __LINE__);
     printf("FILTER_DC_ADAPTIVE:      1.0\n");
-    SET_SENSOR_PARAMETER(sensorID, FILTER_DC_ADAPTIVE, 1.0, __LINE__);
+    SET_SENSOR_PARAMETER(SENSOR_ID, FILTER_DC_ADAPTIVE, 1.0, __LINE__);
     printf("FILTER_ALPHA_PARAMETERS:\n");
     printf("    alpha max    20000, 20000, 20000, 20000, 20000, 20000, 20000,\n");
     printf("    alpha min      500,   500,   500,   500,   500,   500,   500,\n");
@@ -562,14 +560,14 @@ void initTxRx() {
             2, 4, 8, 16, 32, 32, 32,
             true
         };
-        SET_SENSOR_PARAMETER(sensorID, FILTER_ALPHA_PARAMETERS, adaptiveRecord, __LINE__);
+        SET_SENSOR_PARAMETER(SENSOR_ID, FILTER_ALPHA_PARAMETERS, adaptiveRecord, __LINE__);
     }
     printf("FILTER_LARGE_CHANGE:     false\n");
-    SET_SENSOR_PARAMETER(sensorID, FILTER_LARGE_CHANGE, false, __LINE__);
+    SET_SENSOR_PARAMETER(SENSOR_ID, FILTER_LARGE_CHANGE, false, __LINE__);
     printf("QUALITY:                 15, 20, 16, 5\n"); {
         // initialize the quality parameter structure
         QUALITY_PARAMETERS qualityParameters = {15, 20, 16, 5};
-        SET_SENSOR_PARAMETER(sensorID, QUALITY, qualityParameters, __LINE__);
+        SET_SENSOR_PARAMETER(SENSOR_ID, QUALITY, qualityParameters, __LINE__);
     }
 
 
@@ -582,14 +580,14 @@ void initTxRx() {
     //
     printf("\nRepeat - GetSensorParameter()");
     printf("\n=============================\n");
-    printf("Using sensor ID = 0\n");
-    sensorID = 0;
+    printf("Using sensor ID = %d\n", SENSOR_ID);
+
     //
     // DATA_FORMAT
     //
     {
         DATA_FORMAT_TYPE buffer, *pBuffer = &buffer;
-        errorCode = GetSensorParameter(sensorID, DATA_FORMAT, pBuffer, sizeof(buffer));
+        errorCode = GetSensorParameter(SENSOR_ID, DATA_FORMAT, pBuffer, sizeof(buffer));
         if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
         printf("DATA_FORMAT: %d\n", buffer);
     }
@@ -598,7 +596,7 @@ void initTxRx() {
     //
     {
         DOUBLE_ANGLES_RECORD buffer, *pBuffer = &buffer;
-        errorCode = GetSensorParameter(sensorID, ANGLE_ALIGN, pBuffer, sizeof(buffer));
+        errorCode = GetSensorParameter(SENSOR_ID, ANGLE_ALIGN, pBuffer, sizeof(buffer));
         if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
         printf("ANGLE_ALIGN: %6.2f, %6.2f, %6.2f\n",
                buffer.a,
@@ -610,7 +608,7 @@ void initTxRx() {
     //
     {
         HEMISPHERE_TYPE buffer, *pBuffer = &buffer;
-        errorCode = GetSensorParameter(sensorID, HEMISPHERE, pBuffer, sizeof(buffer));
+        errorCode = GetSensorParameter(SENSOR_ID, HEMISPHERE, pBuffer, sizeof(buffer));
         if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
         printf("HEMISPHERE: %4x\n", buffer);
     }
@@ -619,7 +617,7 @@ void initTxRx() {
     //
     {
         BOOL buffer, *pBuffer = &buffer;
-        errorCode = GetSensorParameter(sensorID, FILTER_AC_WIDE_NOTCH, pBuffer, sizeof(buffer));
+        errorCode = GetSensorParameter(SENSOR_ID, FILTER_AC_WIDE_NOTCH, pBuffer, sizeof(buffer));
         if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
         printf("FILTER_AC_WIDE_NOTCH: %d\n", buffer);
     }
@@ -628,7 +626,7 @@ void initTxRx() {
     //
     {
         BOOL buffer, *pBuffer = &buffer;
-        errorCode = GetSensorParameter(sensorID, FILTER_AC_NARROW_NOTCH, pBuffer, sizeof(buffer));
+        errorCode = GetSensorParameter(SENSOR_ID, FILTER_AC_NARROW_NOTCH, pBuffer, sizeof(buffer));
         if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
         printf("FILTER_AC_NARROW_NOTCH: %d\n", buffer);
     }
@@ -637,7 +635,7 @@ void initTxRx() {
     //
     {
         double buffer, *pBuffer = &buffer;
-        errorCode = GetSensorParameter(sensorID, FILTER_DC_ADAPTIVE, pBuffer, sizeof(buffer));
+        errorCode = GetSensorParameter(SENSOR_ID, FILTER_DC_ADAPTIVE, pBuffer, sizeof(buffer));
         if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
         printf("FILTER_DC_ADAPTIVE: %5.2f\n", buffer);
     }
@@ -646,7 +644,7 @@ void initTxRx() {
     //
     {
         ADAPTIVE_PARAMETERS buffer, *pBuffer = &buffer;
-        errorCode = GetSensorParameter(sensorID, FILTER_ALPHA_PARAMETERS, pBuffer, sizeof(buffer));
+        errorCode = GetSensorParameter(SENSOR_ID, FILTER_ALPHA_PARAMETERS, pBuffer, sizeof(buffer));
         if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
         printf("FILTER_ALPHA_PARAMETERS:\n");
         printf("    Alpha max   %5d, %5d, %5d, %5d, %5d, %5d, %5d\n",
@@ -683,7 +681,7 @@ void initTxRx() {
     //
     {
         BOOL buffer, *pBuffer = &buffer;
-        errorCode = GetSensorParameter(sensorID, FILTER_LARGE_CHANGE, pBuffer, sizeof(buffer));
+        errorCode = GetSensorParameter(SENSOR_ID, FILTER_LARGE_CHANGE, pBuffer, sizeof(buffer));
         if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
         printf("FILTER_LARGE_CHANGE: %d\n", buffer);
     }
@@ -692,7 +690,7 @@ void initTxRx() {
     //
     {
         QUALITY_PARAMETERS buffer, *pBuffer = &buffer;
-        errorCode = GetSensorParameter(sensorID, QUALITY, pBuffer, sizeof(buffer));
+        errorCode = GetSensorParameter(SENSOR_ID, QUALITY, pBuffer, sizeof(buffer));
         if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
         printf("QUALITY: %d, %d, %d, %d\n",
                buffer.error_offset,
@@ -829,14 +827,13 @@ void initTxRx() {
     //
     printf("\nRestore defaults for sensor/transmitter #0");
     printf("\n==========================================\n");
-    sensorID = 0;
     transmitterID = 0;
     // initialize a structure of angles
     DOUBLE_ANGLES_RECORD anglesRecord = {0, 0, 0};
 
-    SET_SENSOR_PARAMETER(sensorID, DATA_FORMAT, DOUBLE_POSITION_ANGLES, __LINE__);
-    SET_SENSOR_PARAMETER(sensorID, ANGLE_ALIGN, anglesRecord, __LINE__);
-    SET_SENSOR_PARAMETER(sensorID, HEMISPHERE, FRONT, __LINE__);
+    SET_SENSOR_PARAMETER(SENSOR_ID, DATA_FORMAT, DOUBLE_POSITION_ANGLES, __LINE__);
+    SET_SENSOR_PARAMETER(SENSOR_ID, ANGLE_ALIGN, anglesRecord, __LINE__);
+    SET_SENSOR_PARAMETER(SENSOR_ID, HEMISPHERE, FRONT, __LINE__);
 
     SET_TRANSMITTER_PARAMETER(transmitterID, REFERENCE_FRAME, anglesRecord, __LINE__);
     SET_TRANSMITTER_PARAMETER(transmitterID, XYZ_REFERENCE_FRAME, false, __LINE__);
@@ -884,12 +881,6 @@ DOUBLE_POSITION_ANGLES_RECORD readATI(short sensID) {
 
     // scan the sensors and request a record if the sensor is physically attached
     for (short sensorID = 0; sensorID < ATC3DG.m_config.numberSensors; sensorID++) {
-        record.x = -100;
-        record.y = -100;
-        record.z = -100;
-        record.a = -100;
-        record.e = -100;
-        record.r = -100;
         // sensor attached so get record
         errorCode = GetAsynchronousRecord(sensorID, pRecord, sizeof(record));
         if (errorCode != BIRD_ERROR_SUCCESS) { errorHandler(errorCode, __LINE__); }
@@ -965,7 +956,7 @@ int main(int argc, char *argv[]) {
                 if (data_count < RECORD_CNT) {
                     retRecord = readATI(SENSOR_ID);
                     data_count++;
-                    printf("%4ld [%d] %8.3f %8.3f %8.3f: %8.2f %8.2f %8.2f\n",
+                    printf("%4ld [%d] x: %8.3f y: %8.3f z: %8.3f: a: %8.2f e: %8.2f r: %8.2f\n",
                            data_count,
                            SENSOR_ID,
                            retRecord.x, retRecord.y, retRecord.z,
@@ -995,11 +986,6 @@ int main(int argc, char *argv[]) {
                 } else {
                     motor_destination[2] = dxl_goal_position[0];
                 }
-                // printf("[ID:%4ld]", data_count);
-                // for (int i: motor_destination) {
-                //     printf("%d ", i);
-                // }
-                // printf("\n");
                 state = MOVE_MOTORS;
                 break;
             case MOVE_MOTORS:
@@ -1096,107 +1082,8 @@ int main(int argc, char *argv[]) {
                     return EXIT_FAILURE;
                 }
                 return EXIT_SUCCESS;
-
-
             default:
                 break;
         }
     }
-    // // collect as many records as specified in the command line
-
-
-    // printf("      -----------\n");
-    // for (int i = 0; i < RECORD_CNT; i++) {
-    //     short sensorID = 0;
-    //     retRecord = readATI(sensorID);
-    //     printf("%4d [%d] %8.3f %8.3f %8.3f: %8.2f %8.2f %8.2f\n",
-    //            i + 1,
-    //            sensorID,
-    //            retRecord.x, retRecord.y, retRecord.z,
-    //            retRecord.a, retRecord.e, retRecord.r
-    //     );
-    //     // while (true) {
-    //     // printf("Press any key to continue! (or press ESC to quit!)\n");
-    //     // if (getch() == ESC_ASCII_VALUE)
-    //     //     break;
-    //     // Add Dynamixel#1 goal position value to the Syncwrite storage
-    //     int motorPos[3] = {1, 2, 3};
-    //     if (retRecord.x < 30 || retRecord.x > -30) {
-    //         motorPos[0] = dxl_goal_position[0];
-    //     } else {
-    //         motorPos[0] = dxl_goal_position[1];
-    //     }
-    //     if (retRecord.y < 30) {
-    //         motorPos[1] = dxl_goal_position[0];
-    //     } else {
-    //         motorPos[1] = dxl_goal_position[1];
-    //     }
-    //     if (retRecord.z < 30) {
-    //         motorPos[2] = dxl_goal_position[0];
-    //     } else {
-    //         motorPos[2] = dxl_goal_position[1];
-    //     }
-    //
-    //
-    //     for (int j = 0; j < MOTOR_CNT; j++) {
-    //         if (vMotors[j].addGroupSyncWrite(&groupSyncWrite, motorPos[index]) != true) {
-    //             printf("GroupSyncWrite addGroupSyncWrite failed!\n");
-    //             break;
-    //         }
-    //     }
-    //     // Add Dynamixel#2 goal position value to the Syncwrite parameter storage
-    //     // if (dxl2.addGroupSyncWrite(&groupSyncWrite, dxl_goal_position[index]) != true) {
-    //     //     return EXIT_FAILURE;
-    //     // }
-    //
-    //     // Syncwrite goal position
-    //     dxl_comm_result = groupSyncWrite.txPacket();
-    //     if (dxl_comm_result != COMM_SUCCESS) printf("%s\n", packetHandler->getTxRxResult(dxl_comm_result));
-    //
-    //     // Clear syncwrite parameter storage
-    //     groupSyncWrite.clearParam();
-    //     bool exitFlag;
-    //
-    //     dxl_error = 0;
-    //     do {
-    //         // Syncread present position
-    //         dxl_comm_result = groupSyncRead.txRxPacket();
-    //         exitFlag = true;
-    //         for (int i = 0; i < MOTOR_CNT; i++) {
-    //             if (dxl_comm_result != COMM_SUCCESS) {
-    //                 printf("%s\n", packetHandler->getTxRxResult(dxl_comm_result));
-    //             } else {
-    //                 if (groupSyncRead.getError(vMotors[i].getMotorID(), &dxl_error)) {
-    //                     printf("[ID:%03d] %s\n", vMotors[i].getMotorID(), packetHandler->getRxPacketError(dxl_error));
-    //                 }
-    //             }
-    //         }
-    //
-    //         for (int i = 0; i < MOTOR_CNT; i++) {
-    //             // printf("[ID:%03d] GoalPos:%03d  PresPos:%03d\t", vMotors[i].getMotorID(),
-    //             // dxl_goal_position[index], vMotors[i].checkAndGetPresentPosition(&groupSyncRead));
-    //             exitFlag &= vMotors[i].checkIfAtGoalPosition(dxl_goal_position[index]);
-    //         }
-    //         // printf("\n");
-    //     } while (exitFlag);
-    //     //
-    //     // // Change goal position
-    //     // index = (index + 1) % 2;
-    // }
-    //
-    // cleanUpAndExit();
-    //
-    //
-    // for (int i = 0; i < MOTOR_CNT; i++) {
-    //     // // Disable Dynamixel#1 Torque
-    //     vMotors[i].disableTorque(packetHandler, portHandler);
-    // }
-    //
-    // // Close port
-    // portHandler->closePort();
-    //
-    // if (dxl_comm_result != COMM_SUCCESS) {
-    //     return EXIT_FAILURE;
-    // }
-    // return EXIT_SUCCESS;
 }

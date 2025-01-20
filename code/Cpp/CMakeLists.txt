@@ -8,7 +8,7 @@ set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Compiler options
-add_compile_options(-O2 -O3 -DLINUX -D_GNU_SOURCE -fPIC -pthread -Wall -m64 -g)
+add_compile_options(-O2 -O3 -DLINUX -D_GNU_SOURCE -fPIC -pthread -Wall -m64 -g -Wmaybe-uninitialized)
 
 link_directories(/usr/lib64/)
 # Include directories

@@ -1,8 +1,8 @@
 #ifndef MOTOR_H
 #define MOTOR_H
 
-#include <string>
 #include "../include/dynamixel_sdk/dynamixel_sdk.h"
+
 
 #define TORQUE_ENABLE                   1                   // Value for enabling the torque
 #define TORQUE_DISABLE                  0                   // Value for disabling the torque
@@ -94,9 +94,9 @@ public:
 
     int disableTorque(dynamixel::PacketHandler *packetHandler, dynamixel::PortHandler *portHandler) const;
 
-    bool addGroupSyncRead(dynamixel::GroupSyncRead *groupSyncRead);
+    bool addGroupSyncRead(dynamixel::GroupSyncRead *groupSyncRead) const;
 
-    bool addGroupSyncWrite(dynamixel::GroupSyncWrite *groupSyncWrite, int goalPosition);
+    bool addGroupSyncWrite(dynamixel::GroupSyncWrite *groupSyncWrite, int goalPosition) const;
 
     uint32_t checkAndGetPresentPosition(dynamixel::GroupSyncRead *groupSyncRead);
 
