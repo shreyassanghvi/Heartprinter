@@ -10,15 +10,7 @@
  */
 int Motor::getMotorID() const { return motor.DXL_ID; }
 
-/**
- * @brief Default constructor for the Motor class.
- *
- * Initializes the motor ID to -1. The motor object is not valid for use until
- * a valid motor ID is set using the Motor constructor with an ID argument.
- */
-Motor::Motor() {
-    this->motor.DXL_ID = -1;
-}
+
 /**
  * @brief Constructs a Motor object with specified ID and motor type.
  *

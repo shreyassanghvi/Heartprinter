@@ -15,7 +15,13 @@
 #define ADDR_LED                        65                  // Control table address is different in Dynamixel model
 #define LED_ON                          1                   // Value for LED on
 #define LED_OFF                         0                   // Value for LED off
+// #define for various definitions for the DYNAMIXEL
+#define PROTOCOL_VERSION                2.0                 // See which protocol version is used in the DYNAMIXEL
+#define DEVICENAME                      "/dev/ttyUSB0"      // ex) Windows: "COM1"   Linux: "/dev/ttyUSB0" Mac: "/dev/tty.usbserial-*"
+
+#define BAUDRATE                        57600                // Baudrate of Dynamixel
 #define X_SERIES
+
 
 #ifdef X_SERIES
 #define ADDR_TORQUE_ENABLE 64
@@ -78,6 +84,7 @@ typedef DynamixelMotor DynamixelMotor;
 class Motor {
 public:
     Motor();
+
     Motor(int id);
 
     // Add other public members as needed
@@ -99,7 +106,7 @@ public:
                               int operationMode) const;
 
     void ledOperationMode(dynamixel::PacketHandler *packetHandler, dynamixel::PortHandler *portHandler,
-                                 int ledStatus) const;
+                          int ledStatus) const;
 
 private:
     // Add private members as needed
