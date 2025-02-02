@@ -13,7 +13,7 @@
 #define ESC_ASCII_VALUE                 0x1b                // ASCII value for the ESC key
 
 //user defined #define
-#define RECORD_CNT                      100                // Number of records to collect
+#define RECORD_CNT                      1000                // Number of records to collect
 #define MOTOR_CNT                       3                  // Number of motors to control
 #define SENSOR_ID                       0                  // Sensor ID to use
 #define DEBUG_PRINT                     1                  // Print debug messages
