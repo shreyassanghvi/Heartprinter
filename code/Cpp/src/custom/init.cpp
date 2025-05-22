@@ -919,7 +919,7 @@ int main(int argc, char *argv[]) {
     int motor_destination[MOTOR_CNT];
 
     DOUBLE_POSITION_ANGLES_RECORD retRecord;
-
+    //TODO: check and fix state machine
     while (true) {
         switch (state) {
             case START:
