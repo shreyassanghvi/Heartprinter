@@ -26,11 +26,11 @@
 TARGET      = system.run
 # important directories used by assorted rules and other variables
 DIR_DXL    = ..
-DIR_OBJS   = .objects
+DIR_OBJS   = .object
 
 # compiler options
 CXX         = g++
-CXXFLAGS    = -O2 -O3 -DLINUX -D_GNU_SOURCE -fPIC -pthread -Wall $(INCLUDES) -m64 -g
+CXXFLAGS    = -O2 -O3 -DLINUX -D_GNU_SOURCE -fPIC -pthread -Wall -m64 -g $(INCLUDES)
 LDFLAGS     = $(CXXFLAGS)
 CLLIBS      = /usr/lib64/ATC3DGlib64.so
 

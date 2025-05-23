@@ -3,6 +3,9 @@
 //
 #include "../../include/custom/Motor.h"
 
+#include <cstdlib>
+#include <unistd.h>
+
 /**
  * @brief Get the motor ID.
  *
@@ -98,7 +101,7 @@ int Motor::disableTorque(dynamixel::PacketHandler *packetHandler, dynamixel::Por
  * @param groupSyncRead The GroupSyncRead object to add this Motor object to.
  * @return True if the Motor object is successfully added to the GroupSyncRead object.
  */
-bool Motor::addGroupSyncRead(dynamixel::GroupSyncRead *groupSyncRead) {
+bool Motor::addGroupSyncRead(dynamixel::GroupSyncRead *groupSyncRead) const {
     //TODO: add parameter check
     if (groupSyncRead == nullptr || groupSyncRead->addParam(this->getMotorID()) == false) {
         fprintf(stderr, "[ID:%03d] groupSyncRead addparam failed", this->getMotorID());
@@ -114,9 +117,13 @@ bool Motor::addGroupSyncRead(dynamixel::GroupSyncRead *groupSyncRead) {
  * @param goalPosition The goal position to write to the motor.
  * @return True if the Motor object is successfully added to the GroupSyncWrite object.
  */
-bool Motor::addGroupSyncWrite(dynamixel::GroupSyncWrite *groupSyncWrite, int goalPosition) {
+bool Motor::addGroupSyncWrite(dynamixel::GroupSyncWrite *groupSyncWrite, int goalPosition) const {
     //TODO: add parameter check
     // Allocate goal position value into byte array
+    if (groupSyncWrite == nullptr) {
+        fprintf(stderr, "[ID:%03d] groupSyncWrite addparam failed: null", this->getMotorID());
+        return false;
+    }
     uint8_t param_goal_position[4];
     param_goal_position[0] = DXL_LOBYTE(DXL_LOWORD(goalPosition));
     param_goal_position[1] = DXL_HIBYTE(DXL_LOWORD(goalPosition));

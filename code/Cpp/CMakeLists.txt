@@ -1,48 +1,41 @@
 cmake_minimum_required(VERSION 3.10)
 
-# Set the project name
-project(DXL_Protocol_Example)
+# Project name
+project(system_run)
 
-# Set the target executable name
-set(TARGET system.run)
-
-# Specify the directories
-set(DIR_DXL ..)
-set(DIR_OBJS .objects)
+# Set C++ standard
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Compiler options
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 -O3 -DLINUX -D_GNU_SOURCE -fPIC -pthread -Wall -m64 -g")
+add_compile_options(-O2 -O3 -DLINUX -D_GNU_SOURCE -fPIC -pthread -Wall -m64 -g -Wmaybe-uninitialized)
 
+link_directories(/usr/lib64/)
 # Include directories
 include_directories(
-        ${DIR_DXL}/include/dynamixel_sdk
+        ${CMAKE_SOURCE_DIR}/../include/dynamixel_sdk
+        ${CMAKE_SOURCE_DIR}/../include/custom
+        /opt/3DGuidance.Rev.E.64/3DGuidanceAPI/
 )
-include_directories(
-        ${DIR_DXL}/include/custom
-)
-include_directories(
-        /opt/3DGuidance.Rev.E.64/3DGuidanceAPI
-)
+
 # Source files
 set(SOURCES
-        ./src/custom/Motor.cpp
-        ./src/custom/init.cpp
-        # ./src/custom/Sample.cpp
-        # *** OTHER SOURCES GO HERE ***
+        src/custom/Motor.cpp
+        src/custom/init.cpp
+        # src/custom/Sample.cpp  # Commented out as in the original Makefile
 )
 
-# Create an object directory if it doesn't exist (CMake handles this differently)
-file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/${DIR_OBJS})
+# Create executable
+add_executable(${PROJECT_NAME} ${SOURCES})
 
-# Add the executable target
-add_executable(${TARGET} ${SOURCES})
+add_library(ATC3DGlib64 SHARED IMPORTED) #import the library as imported
+set_target_properties(ATC3DGlib64 PROPERTIES IMPORTED_LOCATION /usr/lib64/ATC3DGlib64.so) #set the library path
 
-# Link libraries
-target_link_libraries(${TARGET}
+target_link_libraries(${PROJECT_NAME} # Link the executable to the libraries
         dxl_x64_cpp
         rt
-        /usr/lib64/ATC3DGlib64.so
+        ATC3DGlib64
 )
 
-# Custom clean command (optional)
-set_property(DIRECTORY APPEND PROPERTY ADDITIONAL_MAKE_CLEAN_FILES ${TARGET} ${DIR_OBJS})
+# Set output name
+set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "system.run")

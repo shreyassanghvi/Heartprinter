@@ -6,6 +6,8 @@
 *.so
 *.lo
 *.run
+*.ini
+*.log
 /code/Cpp/cmake-build-debug/
 /code/Cpp/.objects/
 /code/Cpp/build/
