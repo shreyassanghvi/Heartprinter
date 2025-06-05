@@ -907,7 +907,7 @@ DOUBLE_POSITION_ANGLES_RECORD readATI(short sensID) {
 
     return record;
 }
-
+//Init commit for Control loop code
 int main(int argc, char *argv[]) {
     STATES state = START;
     // Motor motors[MOTOR_CNT];
