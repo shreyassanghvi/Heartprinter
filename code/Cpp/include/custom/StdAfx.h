@@ -10,7 +10,13 @@
 #pragma once
 #endif // _MSC_VER > 1000
 
-
+#ifdef _WIN64
+#include <windows.h>
+#include <stdio.h>		// printf
+#include <string.h>		// string handling
+#include <stdlib.h>		// exit() function
+#include <time.h>		// needed for time functions
+#endif
 
 #ifdef _WIN32
 #include <windows.h>

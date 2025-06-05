@@ -4,19 +4,20 @@
 
 #ifndef INIT_H
 #define INIT_H
-#if defined(__linux__) || defined(__APPLE__)
-#include <fcntl.h>
-#include <termios.h>
-#define STDIN_FILENO 0
-#elif defined(_WIN32) || defined(_WIN64)
+// #if defined(__linux__) || defined(__APPLE__)
+// #include <fcntl.h>
+// #include <termios.h>
+// #define STDIN_FILENO 0
+// #elif defined(_WIN32) || defined(_WIN64)
+//
+// #endif
 #include <conio.h>
-#endif
 //ATI Trackstar headers
 #include "StdAfx.h"
 #include "ATC3DG.h"
 #include "Sample2.h"
 //Motor SDK Headers
-#include "../../src/DynamixelSDK.h"
+#include "../dynamixel_sdk/dynamixel_sdk.h"
 // userdefined headers
 #include <cstring>
 
@@ -32,7 +33,7 @@ enum STATES {
     READ_MOTORS,
     SET_MOTOR,
     MOVE_MOTORS,
-    ERROR,
+    ERR,
     CLEANUP_MOTORS,
     CLEANUP_TRACKSTAR,
     END
