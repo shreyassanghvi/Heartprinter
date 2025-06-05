@@ -1,0 +1,44 @@
+cmake_minimum_required(VERSION 3.10)
+
+# Project name
+project(system_run)
+
+# Set C++ standard
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Compiler options
+add_compile_options(-O2 -O3 -DLINUX -D_GNU_SOURCE -fPIC -pthread -Wall -m64 -g -Wmaybe-uninitialized)
+
+# link_directories(/usr/lib64/)
+# Include directories
+include_directories(
+#         ${CMAKE_SOURCE_DIR}/../include/dynamixel_sdk
+#         ${CMAKE_SOURCE_DIR}/../include/custom
+        "C:/Program Files (x86)/Northern Digital Inc/3D Guidance driveBAY/3DG API Developer/3DG API/"
+)
+include_directories(
+    ${DIR_DXL}/include/dynamixel_sdk
+    ${DIR_DXL}/include/custom
+    "C:/Program Files (x86)/Northern Digital Inc/3D Guidance driveBAY/3DG API Developer/3DG API/"
+    "${DIR_DXL}/DXL_API/"
+)
+
+# Source files
+set(SOURCES
+        src/custom/Motor.cpp
+        src/custom/init.cpp
+        # src/custom/Sample.cpp  # Commented out as in the original Makefile
+)
+
+# Create executable
+add_executable(${PROJECT_NAME} ${SOURCES})
+
+target_link_libraries(${PROJECT_NAME} # Link the executable to the libraries
+        # dxl_x64_cpp
+        # rt
+        "C:/Program Files (x86)/Northern Digital Inc/3D Guidance driveBAY/3DG API Developer/3DG API/ATC3DG64.dll"
+)
+
+# Set output name
+set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "system.run")
