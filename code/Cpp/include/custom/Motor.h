@@ -1,7 +1,7 @@
 #ifndef MOTOR_H
 #define MOTOR_H
 
-#include "../include/dynamixel_sdk/dynamixel_sdk.h"
+#include "../dynamixel_sdk/dynamixel_sdk.h"
 
 
 #define TORQUE_ENABLE                   1                   // Value for enabling the torque

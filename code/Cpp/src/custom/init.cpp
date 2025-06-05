@@ -2,10 +2,11 @@
 // Created by shreyas on 12/19/24.
 //
 #include "../../include/custom/init.h"
+#include "../../include/custom/ATC3DG.h"
+
 // #define for various definitions for the DYNAMIXEL
 #define PROTOCOL_VERSION                2.0                 // See which protocol version is used in the DYNAMIXEL
-#define DEVICENAME                      "/dev/ttyUSB0"      // ex) Windows: "COM1"   Linux: "/dev/ttyUSB0" Mac: "/dev/tty.usbserial-*"
-
+#define DEVICENAME                      "COM4"      // ex) Windows: "COM1"   Linux: "/dev/ttyUSB0" Mac: "/dev/tty.usbserial-*"
 
 
 #define BAUDRATE                        57600
@@ -915,10 +916,17 @@ int main(int argc, char *argv[]) {
     int dxl_goal_position[2] = {DXL_MINIMUM_POSITION_VALUE, static_cast<int>(DXL_MAXIMUM_POSITION_VALUE * 1.5)};
     uint8_t dxl_error; // Dynamixel error
     long data_count = 0;
-    int ERROR_FLG = 0;
+    int ERR_FLG = 0;
     int motor_destination[MOTOR_CNT];
 
     DOUBLE_POSITION_ANGLES_RECORD retRecord;
+    retRecord.a = 0;
+    retRecord.e = 0;
+    retRecord.r = 0;
+
+    retRecord.x = 0;
+    retRecord.y = 0;
+    retRecord.z = 0;
     //TODO: check and fix state machine
     while (true) {
         switch (state) {
@@ -932,20 +940,20 @@ int main(int argc, char *argv[]) {
                     motor_destination[i] = 0;
                     vMotors.emplace_back(i);
                     if (initMotors(vMotors.back()) != EXIT_SUCCESS) {
-                        state = ERROR;
-                        ERROR_FLG = 1;
+                        state = ERR;
+                        ERR_FLG = 1;
                         break;
                     }
                     if (vMotors.back().addGroupSyncWrite(&groupSyncWrite, DXL_MINIMUM_POSITION_VALUE) != true) {
-                        state = ERROR;
-                        ERROR_FLG = 1;
+                        state = ERR;
+                        ERR_FLG = 1;
                         break;
                     }
                 }
                 dxl_comm_result = groupSyncWrite.txPacket();
                 if (dxl_comm_result != COMM_SUCCESS) printf("%s\n", packetHandler->getTxRxResult(dxl_comm_result));
                 groupSyncWrite.clearParam();
-                if (state == ERROR) {
+                if (state == ERR) {
                     break;
                 }
                 state = INIT_TRACKSTAR;
@@ -953,6 +961,7 @@ int main(int argc, char *argv[]) {
             case INIT_TRACKSTAR:
                 initTxRx();
                 state = READ_TRACKSTAR;
+
                 break;
             case READ_TRACKSTAR:
                 if (data_count == 0) {
@@ -995,32 +1004,32 @@ int main(int argc, char *argv[]) {
                 } else {
                     motor_destination[2] = dxl_goal_position[0];
                 }
-                // printf("[ID:%4ld]", data_count);
-                // for (int i: motor_destination) {
-                //     printf("%d ", i);
-                // }
-                // printf("\n");
+            // printf("[ID:%4ld]", data_count);
+            // for (int i: motor_destination) {
+            //     printf("%d ", i);
+            // }
+            // printf("\n");
                 state = MOVE_MOTORS;
                 break;
             case MOVE_MOTORS:
                 for (int j = 0; j < MOTOR_CNT; j++) {
                     if (vMotors[j].addGroupSyncWrite(&groupSyncWrite, motor_destination[j]) != true) {
-                        state = ERROR;
-                        ERROR_FLG = 1;
+                        state = ERR;
+                        ERR_FLG = 1;
                         break;
                     }
                 }
-                if (state == ERROR) {
+                if (state == ERR) {
                     break;
                 }
                 dxl_comm_result = groupSyncWrite.txPacket();
                 if (dxl_comm_result != COMM_SUCCESS) {
                     printf("%s\n", packetHandler->getTxRxResult(dxl_comm_result));
-                    state = ERROR;
-                    ERROR_FLG = 1;
+                    state = ERR;
+                    ERR_FLG = 1;
                 }
                 groupSyncWrite.clearParam();
-                if (state == ERROR) {
+                if (state == ERR) {
                     break;
                 }
                 state = READ_MOTORS;
@@ -1036,8 +1045,8 @@ int main(int argc, char *argv[]) {
                     dxl_comm_result = groupSyncRead.txRxPacket();
                     if (dxl_comm_result != COMM_SUCCESS) {
                         printf("%s\n", packetHandler->getTxRxResult(dxl_comm_result));
-                        state = ERROR;
-                        ERROR_FLG = 1;
+                        state = ERR;
+                        ERR_FLG = 1;
                         for (int i = 0; i < MOTOR_CNT; i++) {
                             if (groupSyncRead.getError(vMotors[i].getMotorID(), &dxl_error)) {
                                 printf("[ID:%03d] %s\n", vMotors[i].getMotorID(),
@@ -1067,12 +1076,12 @@ int main(int argc, char *argv[]) {
                     // usleep(10000); // 10ms delay, adjust as needed
                 } while (exitFlag); // Continue loop until all motors reach destination
 
-                if (state == ERROR) {
+                if (state == ERR) {
                     break;
                 }
                 state = READ_TRACKSTAR;
                 break;
-            case ERROR:
+            case ERR:
                 fprintf(stderr, "User error\n");
                 state = END;
                 break;
@@ -1092,7 +1101,7 @@ int main(int argc, char *argv[]) {
                 break;
             case CLEANUP_TRACKSTAR:
                 cleanUpAndExit();
-                if (ERROR_FLG != 0) {
+                if (ERR_FLG != 0) {
                     return EXIT_FAILURE;
                 }
                 return EXIT_SUCCESS;

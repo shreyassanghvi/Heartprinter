@@ -19,7 +19,7 @@
 #if defined(_WIN32) || defined(_WIN64)
 #define WINDLLEXPORT
 
-#include "port_handler_windows.h"
+#include "DynamixelSDK.h"
 
 #include <stdio.h>
 #include <string.h>

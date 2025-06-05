@@ -1,16 +1,14 @@
 //*****************************************************************************//
 //*****************************************************************************//
 //
-//	Source: C:/PCI driver/msdev6/ATC3DG/rcs/ATC3DG.h 
+//	Author: crobertson
 //
-//	Author: crobertson 
+//	Revision for ATC3DG 36.0.19.11
+//				
 //
-//	Revision: 1.6 (required for 1.31.6.13 and higher to be able to use the
-//				extra command functionality
+//	Date: 08/04/2017
 //
-//	Date: 2002/02/19 13:27:58 
-//
-//	COPYRIGHT:		COPYRIGHT ASCENSION TECHNOLOGY CORPORATION - 2000, 2001
+//	Copyright (C) 2017 Northern Digital Incorporated, All rights reserved.
 //
 //*****************************************************************************//
 //*****************************************************************************//
@@ -22,7 +20,6 @@
 //
 //*****************************************************************************//
 //*****************************************************************************//
-
 
 #ifndef ATC3DG_H
 #define ATC3DG_H
@@ -44,80 +41,7 @@
 #endif
 #endif
 #endif
-
-/*****************************************************************************
-							TYPEDEF DEFINITIONS
- *****************************************************************************/
-
-#ifdef _WIN32
-
-#ifndef BASETYPES
-typedef unsigned long	ULONG;
-typedef ULONG			*PULONG;
-typedef unsigned short	USHORT;
-typedef USHORT			*PUSHORT;
-typedef unsigned char	UCHAR;
-typedef UCHAR			*PUCHAR;
-#endif
-
-#ifndef _WINDEF_
-typedef int				INT;
-typedef int				BOOL;
-typedef unsigned char	BYTE;
-typedef unsigned short  WORD;
-typedef unsigned long   DWORD;
-#endif
-
-#ifndef _WINNT_
-typedef short			SHORT;
-typedef char			CHAR;
-typedef char 			*PCHAR;
-typedef const CHAR		*LPCSTR, *PCSTR;
-#endif
-
-#else
-typedef void			VOID;
-typedef VOID			*LPVOID;
-typedef u_int32_t		ULONG;
-typedef ULONG			*PULONG;
-typedef u_int32_t		UINT;
-typedef UINT			*PUINT;
-typedef u_int16_t		USHORT;
-typedef USHORT			*PUSHORT;
-typedef u_int8_t		UCHAR;
-typedef UCHAR			*PUCHAR;
-typedef int32_t			INT;
-typedef int32_t			BOOL;
-typedef u_int8_t		BYTE;
-typedef u_int16_t		WORD;
-typedef u_int64_t		DWORD;
-typedef DWORD		   *PDWORD;
-typedef int16_t			SHORT;
-typedef char			CHAR;
-typedef char			*PSTR;
-typedef char			*PCHAR;
-typedef const char		*LPCSTR, *PCSTR;
-#endif
-
-typedef	ULONG			DEVICE_STATUS;
-
-// Function paramater direction
-#ifndef IN
-#define IN
-#endif
-#ifndef OUT
-#define OUT
-#endif
-
-// BOOL defines
-#ifndef TRUE
-#define TRUE 1
-#endif
-
-#ifndef FALSE
-#define FALSE 0
-#endif
-
+ 
 /*****************************************************************************
 							ENUMERATED CONSTANTS
  *****************************************************************************/
@@ -131,9 +55,9 @@ typedef	ULONG			DEVICE_STATUS;
 //
 //   3 3 2 2 2 2 2 2 2 2 2 2 1 1 1 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0 0 0
 //   1 0 9 8 7 6 5 4 3 2 1 0 9 8 7 6 5 4 3 2 1 0 9 8 7 6 5 4 3 2 1 0
-//  +-+-+-+-+-+-+-----------+-------+-------------------------------+
-//  |E|W|X|R|B|M|  Reserved |Address|             Code              |
-//  +-+-+-+-+-+-+-----------+-------+-------------------------------+
+//  +-+-+-+-+-+-+---------+---------+-------------------------------+
+//  |E|W|X|R|B|M| Reserved| Address |             Code              |
+//  +-+-+-+-+-+-+---------+---------+-------------------------------+
 //
 //  where
 //
@@ -241,50 +165,53 @@ enum BIRD_ERROR_CODES
 
 	// new error code for multi-sync
 	BIRD_ERROR_LOST_CONNECTION,				//65 < > USB connection has been lost
-	BIRD_ERROR_INVALID_CONFIGURATION,		//66 < > Invalid multi-sync configuration
+	BIRD_ERROR_INVALID_CONFIGURATION,		//66 < > Invalid configuration
 
 	// VPD error code
 	BIRD_ERROR_TRANSMITTER_RUNNING,			//67 < > TX running while reading/writing VPD
 
-	BIRD_ERROR_MAXIMUM_VALUE = 0x7F			//## value = number of error codes ##
+	BIRD_ERROR_MAXIMUM_VALUE = 0x7F			//	     ## value = number of error codes ##
 };
 
 // error message defines
-enum ERROR_BITS
-{
-	ERROR_FLAG					= 0x80000000,
-	WARNING_FLAG				= 0x40000000,
-	XMTR_ERROR_SOURCE			= 0x20000000,
-	RCVR_ERROR_SOURCE			= 0x10000000,
-	BIRD_ERROR_SOURCE			= 0x08000000,
-	DIAG_ERROR_SOURCE			= 0x04000000,
-	MULTIPLE_ERRORS				= 0x04000000,
-};
+#define	ERROR_FLAG					0x80000000
+#define	WARNING_FLAG				0x40000000
+
+#define	XMTR_ERROR_SOURCE			0x20000000
+#define	RCVR_ERROR_SOURCE			0x10000000
+#define	BIRD_ERROR_SOURCE			0x08000000
+
+#define DIAG_ERROR_SOURCE			0x04000000
+
+// SYSTEM error = none of the above
+
+// NOTE: The MULTIPLE_ERRORS flag is no longer generated
+// It has been left in for backwards compatibility
+#define	MULTIPLE_ERRORS				0x04000000
 
 // DEVICE STATUS ERROR BIT DEFINITIONS
-enum DEVICE_STATUS_BITS
-{
-	VALID_STATUS				= 0x00000000,
-	GLOBAL_ERROR				= 0x00000001,
-	NOT_ATTACHED				= 0x00000002,
-	SATURATED					= 0x00000004,
-	BAD_EEPROM					= 0x00000008,
-	HARDWARE					= 0x00000010,
-	NON_EXISTENT				= 0x00000020,
-	UNINITIALIZED				= 0x00000040,
-	//NO_TRANSMITTER				= 0x00000080,
-	NO_TRANSMITTER_RUNNING		= 0x00000080,
-	BAD_12V						= 0x00000100,
-	CPU_TIMEOUT					= 0x00000200,
-	INVALID_DEVICE				= 0x00000400,
-	NO_TRANSMITTER_ATTACHED		= 0x00000800,
-	OUT_OF_MOTIONBOX			= 0x00001000,
-	ALGORITHM_INITIALIZING		= 0x00002000,
-};
+#define VALID_STATUS				0x00000000
+#define GLOBAL_ERROR				0x00000001
+#define	NOT_ATTACHED				0x00000002
+#define	SATURATED					0x00000004
+#define	BAD_EEPROM					0x00000008
+#define	HARDWARE					0x00000010
+#define	NON_EXISTENT				0x00000020
+#define	UNINITIALIZED				0x00000040
+#define NO_TRANSMITTER_RUNNING		0x00000080
+#define	BAD_12V						0x00000100
+#define	CPU_TIMEOUT					0x00000200
+#define	INVALID_DEVICE				0x00000400
+#define NO_TRANSMITTER_ATTACHED		0x00000800
+#define OUT_OF_MOTIONBOX			0x00001000
+#define ALGORITHM_INITIALIZING		0x00002000
+
+#define	TRUE	1
+#define	FALSE	0
 
 enum MESSAGE_TYPE
 {	
-	SIMPLE_MESSAGE,								// short string describing error code
+	SIMPLE_MESSAGE,							// short string describing error code
 	VERBOSE_MESSAGE,							// long string describing error code
 };
 
@@ -318,16 +245,17 @@ enum SENSOR_PARAMETER_TYPE
 	PART_NUMBER_RX,			// 16 byte null terminated character string
 	MODEL_STRING_PREAMP,	// 11 byte null terminated character string
 	PART_NUMBER_PREAMP,		// 16 byte null terminated character string
+	PORT_CONFIGURATION,		// enumerated constant of type PORT_CONFIGURATION_TYPE
 	END_OF_RX_LIST
 };
 
 enum BOARD_PARAMETER_TYPE
 {
 	SERIAL_NUMBER_PCB,		// installed board's serial number
-	BOARD_SOFTWARE_REVISIONS,	// Extra SW_REV's added 10-5-06 JBD
-	POST_ERROR_PCB,
-	DIAGNOSTIC_TEST_PCB,
-	VITAL_PRODUCT_DATA_PCB,	// single byte parameter to be read/write from VPD section of xmtr EEPROM
+	BOARD_SOFTWARE_REVISIONS,	// BOARD_REVISIONS structure
+	POST_ERROR_PCB,			// board POST_ERROR_PARAMETER
+	DIAGNOSTIC_TEST_PCB,	// board DIAGNOSTIC_TEST_PARAMETER
+	VITAL_PRODUCT_DATA_PCB,	// single byte parameter to be read/write from VPD section of board EEPROM
 	MODEL_STRING_PCB,		// 11 byte null terminated character string
 	PART_NUMBER_PCB,		// 16 byte null terminated character string
 	END_OF_PCB_LIST_BRD
@@ -341,16 +269,16 @@ enum SYSTEM_PARAMETER_TYPE
 	MEASUREMENT_RATE,		// double value (range is hardware dependent)
 	MAXIMUM_RANGE,			// double value (range is hardware dependent)
 	METRIC,					// boolean value to select metric units for position
-	VITAL_PRODUCT_DATA,
-	POST_ERROR,
-	DIAGNOSTIC_TEST,
-	REPORT_RATE,			// single byte 1-127			
+	VITAL_PRODUCT_DATA,		// single byte parameter to be read/write from VPD section of board EEPROM
+	POST_ERROR,				// system (board 0) POST_ERROR_PARAMETER
+	DIAGNOSTIC_TEST,		// system (board 0) DIAGNOSTIC_TEST_PARAMETER
+	REPORT_RATE,			// 2-byte short
 	COMMUNICATIONS_MEDIA,	// Media structure
 	LOGGING,				// Boolean
 	RESET,					// Boolean
 	AUTOCONFIG,				// BYTE 1-127
-	LIBRARY_NAME,			// Character string (MAX_PATH)
-	LIBRARY_VERSION,		// Character string (MAX_PATH)
+	AUXILIARY_PORT,			// structure of type AUXILIARY_PORT_PARAMETERS
+	COMMUTATION_MODE,		// boolean value to select commutation of sensor data for interconnect pickup rejection
 	END_OF_LIST				// end of list place holder
 };
 
@@ -358,13 +286,13 @@ enum COMMUNICATIONS_MEDIA_TYPE
 {
 	USB,					// Auto select USB driver
 	RS232,					// Force to RS232
-	TCPIP,					// Force to TCP/IP
+	TCPIP					// Force to TCP/IP
 };
 
 enum FILTER_OPTION
 {
 	NO_FILTER,
-	DEFAULT_FLOCK_FILTER,
+	DEFAULT_FLOCK_FILTER
 };
 
 enum HEMISPHERE_TYPE
@@ -374,13 +302,27 @@ enum HEMISPHERE_TYPE
 	TOP,
 	BOTTOM,
 	LEFT,
-	RIGHT,
+	RIGHT
 };
 
 enum AGC_MODE_TYPE
 {
 	TRANSMITTER_AND_SENSOR_AGC,		// Old style normal addressing mode
-	SENSOR_AGC_ONLY,					// Old style extended addressing mode
+	SENSOR_AGC_ONLY					// Old style extended addressing mode
+};
+
+enum PORT_CONFIGURATION_TYPE
+{
+	DOF_NOT_ACTIVE,					// No sensor associated with this ID, e.g. ID 5 on a 6DOF port
+	DOF_6_XYZ_AER,					// 6 degrees of freedom
+	DOF_5_XYZ_AE,					// 5 degrees of freedom, no roll
+};
+
+enum AUXILIARY_PORT_TYPE
+{
+	AUX_PORT_NOT_SUPPORTED,			// There is no auxiliary port associated with this sensor port
+	AUX_PORT_NOT_SELECTED,			// The auxiliary port is not selected.
+	AUX_PORT_SELECTED,				// The auxiliary port is selected.
 };
 
 enum DATA_FORMAT_TYPE
@@ -456,7 +398,7 @@ enum BOARD_TYPES
 	PCIBIRD_FLAT_MICRO2,			// flat transmitter, dual TEM sensor (all types)
 	PCIBIRD_DSP4,					// Standalone, DSP, 4 sensor
 	PCIBIRD_UNKNOWN,				// default
-	ATC3DG_BB,						// BayBird
+	ATC3DG_BB						// BayBird
 };
 
 enum DEVICE_TYPES
@@ -475,11 +417,43 @@ enum DEVICE_TYPES
 	TYPE_800_BB_SENSOR,				// BayBird sensor
 	TYPE_800_BB_STD_TRANSMITTER,	// BayBird standard TX
 	TYPE_800_BB_SMALL_TRANSMITTER,	// BayBird small TX
-	TYPE_090_BB_SENSOR,				// Baybird 0.9 mm sensor
+	TYPE_090_BB_SENSOR				// Baybird 0.9 mm sensor
 };
 
 // Async and Sync sensor id parameter
 #define ALL_SENSORS 0xffff
+
+// USB Vendor and Product ID's
+#define ATC_VID                 0x21E2
+#define ATC_VID_LEGACY          0x04B4
+#define ATC_PID_LEGACY_MIN      0x1000
+#define ATC_PID_LEGACY_MAX      0x100A
+
+/*****************************************************************************
+							TYPEDEF DEFINITIONS
+ *****************************************************************************/
+
+#ifndef BASETYPES
+#define BASETYPES
+typedef unsigned long	ULONG;
+typedef ULONG			*PULONG;
+typedef unsigned short	USHORT;
+typedef USHORT			*PUSHORT;
+typedef short			SHORT;
+typedef SHORT			*PSHORT;
+typedef unsigned char	UCHAR;
+typedef UCHAR			*PUCHAR;
+typedef char			*PSZ;
+#endif  /* !BASETYPES */
+
+typedef char			CHAR;
+typedef const CHAR		*LPCSTR, *PCSTR;
+typedef int				BOOL;
+typedef	ULONG			DEVICE_STATUS;
+
+typedef unsigned char	BYTE;
+typedef unsigned short  WORD;
+typedef unsigned long   DWORD;
 
 /*****************************************************************************
 							STRUCTURE DEFINITIONS
@@ -512,7 +486,7 @@ typedef struct tagBOARD_CONFIGURATION
 	USHORT				numberSensors;
 	USHORT				firmwareNumber;
 	USHORT				firmwareRevision;
-	CHAR				modelString[10];
+	char				modelString[10];
 
 } BOARD_CONFIGURATION;
 
@@ -531,16 +505,19 @@ typedef struct tagSYSTEM_CONFIGURATION
 
 typedef struct tagCOMMUNICATIONS_MEDIA_PARAMETERS
 {
-	enum COMMUNICATIONS_MEDIA_TYPE	mediaType;
-    struct tagrs232
-    {
-        CHAR	comport[64];
-    } rs232;
-    struct tagtcpip
-    {
-        USHORT	port;
-        CHAR	ipaddr[64];
-    } tcpip;
+	COMMUNICATIONS_MEDIA_TYPE	mediaType;
+	union
+	{
+		struct
+		{
+			CHAR	comport[64];
+		} rs232;
+		struct
+		{
+			USHORT	port;
+			CHAR	ipaddr[64];
+		} tcpip;
+	};
 } COMMUNICATIONS_MEDIA_PARAMETERS;
 
 typedef struct tagADAPTIVE_PARAMETERS
@@ -578,13 +555,15 @@ typedef struct tagDIAGNOSTIC_TEST_PARAMETER
 {
 	UCHAR				suite;		// User sets this, 0 - All Suites
 	UCHAR				test;		// User sets this, 0 - All Tests
-    UCHAR				suites;		// set, returns suites actually run
+
+	UCHAR				suites;		// set, returns suites run
 									// get, returns num of suites, not used for # test query
-    UCHAR				tests;		// set, returns tests actually run in the given suite
+	UCHAR				tests;		// set, returns tests run in the given suite
 									// get, returns num of tests for given suite, not used for suite query
-	PCHAR				pTestName;  // User supplied ptr to 64 bytes, we fill it in
+	PUCHAR				pTestName;  // User supplied ptr to 64 bytes, we fill it in
 	USHORT				testNameLen;
-    USHORT				diagError;	// set only, result of diagnostic execution
+
+	USHORT				diagError;	// set only, result of diagnostic execution
 } DIAGNOSTIC_TEST_PARAMETER;
 
 typedef struct tagBOARD_REVISIONS
@@ -603,57 +582,62 @@ typedef struct tagBOARD_REVISIONS
 	USHORT	dipole_sw_revision;
 } BOARD_REVISIONS;
 
+typedef struct tagAUXILIARY_PORT_PARAMETERS
+{
+	AUXILIARY_PORT_TYPE auxstate[4];  // one state for each sensor port
+} AUXILIARY_PORT_PARAMETERS;
+
 //
 // Data formatting structures
 //
-typedef struct tagSHORT_POSITION_RECORD
+typedef struct tagSHORT_POSITION
 {
-	SHORT	x;
-	SHORT	y;
-	SHORT	z;
+	short	x;
+	short	y;
+	short	z;
 } SHORT_POSITION_RECORD;
 
-typedef struct tagSHORT_ANGLES_RECORD
+typedef struct tagSHORT_ANGLES
 {
-	SHORT	a;			// azimuth
-	SHORT	e;			// elevation
-	SHORT	r;			// roll
+	short	a;			// azimuth
+	short	e;			// elevation
+	short	r;			// roll
 } SHORT_ANGLES_RECORD;
 
-typedef struct tagSHORT_MATRIX_RECORD
+typedef struct tagSHORT_MATRIX
 {
-	SHORT	s[3][3];
+	short	s[3][3];
 } SHORT_MATRIX_RECORD;
 
-typedef struct tagSHORT_QUATERNIONS_RECORD
+typedef struct tagSHORT_QUATERNIONS
 {
-	SHORT	q[4];
+	short	q[4];
 } SHORT_QUATERNIONS_RECORD;
 
-typedef struct tagSHORT_POSITION_ANGLES_RECORD
+typedef struct tagSHORT_POSITION_ANGLES
 {
-	SHORT	x;
-	SHORT	y;
-	SHORT	z;
-	SHORT	a;
-	SHORT	e;
-	SHORT	r;
+	short	x;
+	short	y;
+	short	z;
+	short	a;
+	short	e;
+	short	r;
 } SHORT_POSITION_ANGLES_RECORD;
 
-typedef struct tagSHORT_POSITION_MATRIX_RECORD
+typedef struct tagSHORT_POSITION_MATRIX
 {
-	SHORT	x;
-	SHORT	y;
-	SHORT	z;
-	SHORT	s[3][3];
+	short	x;
+	short	y;
+	short	z;
+	short	s[3][3];
 } SHORT_POSITION_MATRIX_RECORD;
 
-typedef struct tagSHORT_POSITION_QUATERNION_RECORD
+typedef struct tagSHORT_POSITION_QUATERNION
 {
-	SHORT	x;
-	SHORT	y;
-	SHORT	z;
-	SHORT	q[4];
+	short	x;
+	short	y;
+	short	z;
+	short	q[4];
 } SHORT_POSITION_QUATERNION_RECORD;
 
 
@@ -663,31 +647,31 @@ typedef struct tagSHORT_POSITION_QUATERNION_RECORD
 
 
 
-typedef struct tagDOUBLE_POSITION_RECORD
+typedef struct tagDOUBLE_POSITION
 {
 	double	x;
 	double	y;
 	double	z;
 } DOUBLE_POSITION_RECORD;
 
-typedef struct tagDOUBLE_ANGLES_RECORD
+typedef struct tagDOUBLE_ANGLES
 {
 	double	a;			// azimuth
 	double	e;			// elevation
 	double	r;			// roll
 } DOUBLE_ANGLES_RECORD;
 
-typedef struct tagDOUBLE_MATRIX_RECORD
+typedef struct tagDOUBLE_MATRIX
 {
 	double	s[3][3];
 } DOUBLE_MATRIX_RECORD;
 
-typedef struct tagDOUBLE_QUATERNIONS_RECORD
+typedef struct tagDOUBLE_QUATERNIONS
 {
 	double	q[4];
 } DOUBLE_QUATERNIONS_RECORD;
 
-typedef struct tagDOUBLE_POSITION_ANGLES_RECORD
+typedef struct tagDOUBLE_POSITION_ANGLES
 {
 	double	x;
 	double	y;
@@ -697,7 +681,7 @@ typedef struct tagDOUBLE_POSITION_ANGLES_RECORD
 	double	r;
 } DOUBLE_POSITION_ANGLES_RECORD;
 
-typedef struct tagDOUBLE_POSITION_MATRIX_RECORD
+typedef struct tagDOUBLE_POSITION_MATRIX
 {
 	double	x;
 	double	y;
@@ -705,7 +689,7 @@ typedef struct tagDOUBLE_POSITION_MATRIX_RECORD
 	double	s[3][3];
 } DOUBLE_POSITION_MATRIX_RECORD;
 
-typedef struct tagDOUBLE_POSITION_QUATERNION_RECORD
+typedef struct tagDOUBLE_POSITION_QUATERNION
 {
 	double	x;
 	double	y;
@@ -720,7 +704,7 @@ typedef struct tagDOUBLE_POSITION_QUATERNION_RECORD
 
 
 
-typedef struct tagDOUBLE_POSITION_TIME_STAMP_RECORD
+typedef struct tagDOUBLE_POSITION_TIME_STAMP
 {
 	double	x;
 	double	y;
@@ -728,7 +712,7 @@ typedef struct tagDOUBLE_POSITION_TIME_STAMP_RECORD
 	double	time;
 } DOUBLE_POSITION_TIME_STAMP_RECORD;
 
-typedef struct tagDOUBLE_ANGLES_TIME_STAMP_RECORD
+typedef struct tagDOUBLE_ANGLES_TIME_STAMP
 {
 	double	a;			// azimuth
 	double	e;			// elevation
@@ -736,19 +720,19 @@ typedef struct tagDOUBLE_ANGLES_TIME_STAMP_RECORD
 	double	time;
 } DOUBLE_ANGLES_TIME_STAMP_RECORD;
 
-typedef struct tagDOUBLE_MATRIX_TIME_STAMP_RECORD
+typedef struct tagDOUBLE_MATRIX_TIME_STAMP
 {
 	double	s[3][3];
 	double	time;
 } DOUBLE_MATRIX_TIME_STAMP_RECORD;
 
-typedef struct tagDOUBLE_QUATERNIONS_TIME_STAMP_RECORD
+typedef struct tagDOUBLE_QUATERNIONS_TIME_STAMP
 {
 	double	q[4];
 	double	time;
 } DOUBLE_QUATERNIONS_TIME_STAMP_RECORD;
 
-typedef struct tagDOUBLE_POSITION_ANGLES_TIME_STAMP_RECORD
+typedef struct tagDOUBLE_POSITION_ANGLES_TIME_STAMP
 {
 	double	x;
 	double	y;
@@ -759,7 +743,7 @@ typedef struct tagDOUBLE_POSITION_ANGLES_TIME_STAMP_RECORD
 	double	time;
 } DOUBLE_POSITION_ANGLES_TIME_STAMP_RECORD;
 
-typedef struct tagDOUBLE_POSITION_MATRIX_TIME_STAMP_RECORD
+typedef struct tagDOUBLE_POSITION_MATRIX_STAMP_RECORD
 {
 	double	x;
 	double	y;
@@ -768,7 +752,7 @@ typedef struct tagDOUBLE_POSITION_MATRIX_TIME_STAMP_RECORD
 	double	time;
 } DOUBLE_POSITION_MATRIX_TIME_STAMP_RECORD;
 
-typedef struct tagDOUBLE_POSITION_QUATERNION_TIME_STAMP_RECORD
+typedef struct tagDOUBLE_POSITION_QUATERNION_STAMP_RECORD
 {
 	double	x;
 	double	y;
@@ -786,7 +770,7 @@ typedef struct tagDOUBLE_POSITION_QUATERNION_TIME_STAMP_RECORD
 
 
 
-typedef struct tagDOUBLE_POSITION_TIME_Q_RECORD
+typedef struct tagDOUBLE_POSITION_TIME_Q
 {
 	double	x;
 	double	y;
@@ -795,7 +779,7 @@ typedef struct tagDOUBLE_POSITION_TIME_Q_RECORD
 	USHORT	quality;		
 } DOUBLE_POSITION_TIME_Q_RECORD;
 
-typedef struct tagDOUBLE_ANGLES_TIME_Q_RECORD
+typedef struct tagDOUBLE_ANGLES_TIME_Q
 {
 	double	a;			// azimuth
 	double	e;			// elevation
@@ -804,14 +788,14 @@ typedef struct tagDOUBLE_ANGLES_TIME_Q_RECORD
 	USHORT	quality;		
 } DOUBLE_ANGLES_TIME_Q_RECORD;
 
-typedef struct tagDOUBLE_MATRIX_TIME_Q_RECORD
+typedef struct tagDOUBLE_MATRIX_TIME_Q
 {
 	double	s[3][3];
 	double	time;
 	USHORT	quality;		
 } DOUBLE_MATRIX_TIME_Q_RECORD;
 
-typedef struct tagDOUBLE_QUATERNIONS_TIME_Q_RECORD
+typedef struct tagDOUBLE_QUATERNIONS_TIME_Q
 {
 	double	q[4];
 	double	time;
@@ -902,14 +886,14 @@ typedef struct tagDOUBLE_POSITION_ANGLES_MATRIX_QUATERNION_TIME_Q_BUTTON_RECORD
 
 typedef struct tagSHORT_ALL_RECORD
 {
-	SHORT	x;
-	SHORT	y;
-	SHORT	z;
-	SHORT	a;			// azimuth
-	SHORT	e;			// elevation
-	SHORT	r;			// roll
-	SHORT	s[3][3];
-	SHORT	q[4];
+	short	x;
+	short	y;
+	short	z;
+	short	a;			// azimuth
+	short	e;			// elevation
+	short	r;			// roll
+	short	s[3][3];
+	short	q[4];
 }SHORT_ALL_RECORD;
 
 typedef struct tagDOUBLE_ALL_RECORD
@@ -987,9 +971,7 @@ typedef struct tagDOUBLE_ALL_TIME_STAMP_Q_RAW_RECORD
 						restarted.
 
 */
-ATC3DG_API int InitializeBIRDSystem(
-	void
-	);
+ATC3DG_API int InitializeBIRDSystem(void);
 
 /*
 	GetBIRDSystemConfiguration
@@ -1008,7 +990,7 @@ ATC3DG_API int InitializeBIRDSystem(
 						range of IDs for those devices becomes 0..(n-1)
 */
 ATC3DG_API int GetBIRDSystemConfiguration(
-	OUT SYSTEM_CONFIGURATION* systemConfiguration
+	SYSTEM_CONFIGURATION* systemConfiguration
 	);
 
 /*
@@ -1026,8 +1008,8 @@ ATC3DG_API int GetBIRDSystemConfiguration(
 
 */
 ATC3DG_API int GetTransmitterConfiguration(
-	IN  USHORT transmitterID,
-	OUT TRANSMITTER_CONFIGURATION* transmitterConfiguration
+	USHORT transmitterID,
+	TRANSMITTER_CONFIGURATION* transmitterConfiguration
 	);
 
 /*
@@ -1043,8 +1025,8 @@ ATC3DG_API int GetTransmitterConfiguration(
 */
 
 ATC3DG_API int GetSensorConfiguration(
-	IN  USHORT sensorID,
-	OUT SENSOR_CONFIGURATION* sensorConfiguration
+	USHORT sensorID,
+	SENSOR_CONFIGURATION* sensorConfiguration
 	);
 
 /*
@@ -1064,8 +1046,8 @@ ATC3DG_API int GetSensorConfiguration(
 
 */
 ATC3DG_API int GetBoardConfiguration(
-	IN  USHORT boardID,
-	OUT BOARD_CONFIGURATION* boardConfiguration
+	USHORT boardID,
+	BOARD_CONFIGURATION* boardConfiguration
 	);
 
 /*
@@ -1087,9 +1069,9 @@ ATC3DG_API int GetBoardConfiguration(
 */
 
 ATC3DG_API int GetAsynchronousRecord(
-	IN  USHORT sensorID,
-	OUT void* pRecord,
-	IN  int	recordSize
+	USHORT sensorID,
+	void *pRecord,
+	int	recordSize
 	);
 
 /*
@@ -1111,9 +1093,9 @@ ATC3DG_API int GetAsynchronousRecord(
 
 */
 ATC3DG_API int GetSynchronousRecord(
-	IN  USHORT sensorID,
-	OUT void* pRecord,
-	IN  int	recordSize
+	USHORT sensorID,
+	void *pRecord,
+	int	recordSize
 	);
 
 
@@ -1134,9 +1116,9 @@ ATC3DG_API int GetSynchronousRecord(
 
 */
 ATC3DG_API int GetSystemParameter(
-	IN  enum SYSTEM_PARAMETER_TYPE	parameterType,
-	OUT void*						pBuffer,
-	IN  int							bufferSize
+	enum SYSTEM_PARAMETER_TYPE	parameterType,
+	void						*pBuffer,
+	int							bufferSize
 	);
 
 
@@ -1154,9 +1136,9 @@ ATC3DG_API int GetSystemParameter(
 
 */
 ATC3DG_API int SetSystemParameter(
-	IN  enum SYSTEM_PARAMETER_TYPE	parameterType,
-    IN  void*						pBuffer,
-	IN  int							bufferSize
+	enum SYSTEM_PARAMETER_TYPE	parameterType,
+	void						*pBuffer,
+	int							bufferSize
 	);
 
 
@@ -1178,10 +1160,10 @@ ATC3DG_API int SetSystemParameter(
 
 */
 ATC3DG_API int GetSensorParameter(
-	IN  USHORT						sensorID,
-	IN  enum SENSOR_PARAMETER_TYPE	parameterType,
-	OUT void*						pBuffer,
-	IN  int							bufferSize
+	USHORT						sensorID,
+	enum SENSOR_PARAMETER_TYPE	parameterType,
+	void						*pBuffer,
+	int							bufferSize
 	);
 
 
@@ -1200,10 +1182,10 @@ ATC3DG_API int GetSensorParameter(
 
 */
 ATC3DG_API int SetSensorParameter(
-	IN  USHORT						sensorID,
-	IN  enum SENSOR_PARAMETER_TYPE	parameterType,
-    IN  void*						pBuffer,
-	IN  int							bufferSize
+	USHORT						sensorID,
+	enum SENSOR_PARAMETER_TYPE	parameterType,
+	void						*pBuffer,
+	int							bufferSize
 	);
 
 
@@ -1221,10 +1203,10 @@ ATC3DG_API int SetSensorParameter(
 
 */
 ATC3DG_API int GetTransmitterParameter(
-	IN  USHORT							transmitterID,
-	IN  enum TRANSMITTER_PARAMETER_TYPE	parameterType,
-	OUT void*							pBuffer,
-	IN  int								bufferSize
+	USHORT							transmitterID,
+	enum TRANSMITTER_PARAMETER_TYPE	parameterType,
+	void							*pBuffer,
+	int								bufferSize
 	);
 
 
@@ -1244,10 +1226,10 @@ ATC3DG_API int GetTransmitterParameter(
 
 */
 ATC3DG_API int SetTransmitterParameter(
-	IN  USHORT							transmitterID,
-	IN  enum TRANSMITTER_PARAMETER_TYPE	parameterType,
-    IN  void*							pBuffer,
-	IN  int								bufferSize
+	USHORT							transmitterID,
+	enum TRANSMITTER_PARAMETER_TYPE	parameterType,
+	void							*pBuffer,
+	int								bufferSize
 	);
 
 /*
@@ -1289,80 +1271,78 @@ ATC3DG_API int GetBIRDError(
 
 */
 ATC3DG_API int GetErrorText(
-	IN  int					errorCode,
-	OUT char*				pBuffer,
-	IN  int					bufferSize,
-	IN  enum MESSAGE_TYPE	type
+	int					errorCode,
+	char				*pBuffer,
+	int					bufferSize,
+	enum MESSAGE_TYPE	type
 	);
 
 /*
 
 */
 ATC3DG_API DEVICE_STATUS GetSensorStatus(
-	IN  USHORT sensorID
+	USHORT sensorID
 	);
 
 /*
 
 */
 ATC3DG_API DEVICE_STATUS GetTransmitterStatus(
-	IN  USHORT transmitterID
+	USHORT transmitterID
 	);
 
 /*
 
 */
 ATC3DG_API DEVICE_STATUS GetBoardStatus(
-	IN  USHORT boardID
+	USHORT boardID
 	);
 
 /*
 
 */
 ATC3DG_API DEVICE_STATUS GetSystemStatus(
-	void
+	// no id required
 	);
 
 /*
 
 */
 ATC3DG_API int SaveSystemConfiguration(
-	IN  LPCSTR	lpFileName
+	LPCSTR	lpFileName
 	);
 
 /*
 
 */
 ATC3DG_API int RestoreSystemConfiguration(
-	IN  LPCSTR	lpFileName
+	LPCSTR	lpFileName
 	);
 
 /*
 
 */
 ATC3DG_API int GetBoardParameter(
-	IN  USHORT						boardID,
-	IN  enum BOARD_PARAMETER_TYPE	parameterType,
-	OUT void*						pBuffer,
-	IN  int							bufferSize
+	USHORT						boardID,
+	enum BOARD_PARAMETER_TYPE	parameterType,
+	void						*pBuffer,
+	int							bufferSize
 	);
 
 /*
 
 */
 ATC3DG_API int SetBoardParameter(
-	IN  USHORT						boardID,
-	IN  enum BOARD_PARAMETER_TYPE	parameterType,
-    IN  void*						pBuffer,
-	IN  int							bufferSize
+	USHORT						boardID,
+	enum BOARD_PARAMETER_TYPE	parameterType,
+	void						*pBuffer,
+	int							bufferSize
 	);
 
 /*
 
 */
-ATC3DG_API int CloseBIRDSystem(
-	void
-	);
+ATC3DG_API int CloseBIRDSystem(void);
 
 
 

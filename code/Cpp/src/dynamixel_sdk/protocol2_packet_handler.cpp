@@ -25,14 +25,14 @@
 #elif defined(_WIN32) || defined(_WIN64)
 #define WINDLLEXPORT
 #include <Windows.h>
-#include "protocol2_packet_handler.h"
+#include "DynamixelSDK.h"
 #elif defined(ARDUINO) || defined(__OPENCR__) || defined(__OPENCM904__) || defined(ARDUINO_OpenRB)
 #include "../../include/dynamixel_sdk/protocol2_packet_handler.h"
 #endif
 
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
+#include <cstdio>
+#include <cstring>
+#include <cstdlib>
 
 #define TXPACKET_MAX_LEN    (1*1024)
 #define RXPACKET_MAX_LEN    (1*1024)
