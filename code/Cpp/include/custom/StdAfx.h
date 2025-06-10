@@ -12,10 +12,10 @@
 
 #ifdef _WIN64
 #include <windows.h>
-#include <stdio.h>		// printf
-#include <string.h>		// string handling
-#include <stdlib.h>		// exit() function
-#include <time.h>		// needed for time functions
+#include <cstdio>		// printf
+#include <cstring>		// string handling
+#include <cstdlib>		// exit() function
+#include <ctime>		// needed for time functions
 #endif
 
 #ifdef _WIN32

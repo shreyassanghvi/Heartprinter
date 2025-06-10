@@ -138,7 +138,6 @@ bool Motor::addGroupSyncWrite(dynamixel::GroupSyncWrite *groupSyncWrite, int goa
 
 uint32_t Motor::checkAndGetPresentPosition(dynamixel::GroupSyncRead *groupSyncRead) {
     //TODO: add parameter check
-
     if (groupSyncRead->
         isAvailable(this->getMotorID(), ADDR_PRESENT_POSITION, LEN_PRESENT_POSITION) != true) {
         fprintf(stderr, "[ID:%03d] groupSyncRead getdata failed", this->getMotorID());

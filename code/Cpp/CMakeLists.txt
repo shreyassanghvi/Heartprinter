@@ -26,8 +26,6 @@ add_compile_options(-O2 -O3 -fPIC -pthread -Wall -m64 -g -Wmaybe-uninitialized)
 
 # === Include Directories ===
 include_directories(
-        ${DIR_DXL}/include/dynamixel_sdk
-        ${DIR_DXL}/include/custom
         "C:/Program Files (x86)/Northern Digital Inc/3D Guidance driveBAY/3DG API Developer/3DG API/"
         ${CMAKE_CURRENT_SOURCE_DIR}/c++/include
         ${CMAKE_CURRENT_SOURCE_DIR}/c++/include/dynamixel_sdk
@@ -55,7 +53,6 @@ target_include_directories(dynamixel_sdk_static PRIVATE
 if(WIN32)
     target_link_libraries(dynamixel_sdk ws2_32 winmm)
     target_link_libraries(dynamixel_sdk_static ws2_32 winmm)
-    set_target_properties(dynamixel_sdk PROPERTIES OUTPUT_NAME "dxl_x64_cpp")
     set_target_properties(dynamixel_sdk_static PROPERTIES OUTPUT_NAME "dxl_x64_cpp_static")
 
     # Import the ATC3DG64 library
@@ -66,7 +63,6 @@ if(WIN32)
             INTERFACE_INCLUDE_DIRECTORIES "C:/Program Files (x86)/Northern Digital Inc/3D Guidance driveBAY/3DG API Developer/3DG API/"
     )
 else()
-    target_link_libraries(dynamixel_sdk rt)
     target_link_libraries(dynamixel_sdk_static rt)
 endif()
 

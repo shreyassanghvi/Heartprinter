@@ -2,7 +2,9 @@
 //////////////////////////////////////////////////////////////////////////////
 //
 // very simple classes for the devices
-
+#include "conio.h"
+#include "ATC3DG.h"
+#include "StdAfx.h"
 class CSystem
 {
 public:
@@ -26,7 +28,14 @@ class CBoard
 public:
 	BOARD_CONFIGURATION		m_config;
 };
-
+class CTrackstar
+{
+public:
+	static int kbhit(void);
+	static void initTxRx(void);
+	static void errorHandler(int error, int lineNum);
+	static DOUBLE_POSITION_ANGLES_RECORD readATI(short sensID);
+};
 
 ///////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////

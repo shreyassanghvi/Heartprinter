@@ -11,15 +11,18 @@
 // #elif defined(_WIN32) || defined(_WIN64)
 //
 // #endif
+
 #include <conio.h>
 //ATI Trackstar headers
 #include "StdAfx.h"
 #include "ATC3DG.h"
-#include "Sample2.h"
+#include "CTrackstar.h"
+
 //Motor SDK Headers
 #include "../dynamixel_sdk/dynamixel_sdk.h"
+
 // userdefined headers
-#include <cstring>
+
 
 #include "Motor.h"
 
