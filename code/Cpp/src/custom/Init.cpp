@@ -98,7 +98,7 @@ int initMotors(Motor motors) {
 
 void cleanUpAndExit() {
     int errorCode = SaveSystemConfiguration("newfile.ini");
-    if (errorCode != BIRD_ERROR_SUCCESS) CTrackstar::errorHandler(errorCode, __LINE__);
+    if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
 
     //////////////////////////////////////////////////////////////////////////////
     //////////////////////////////////////////////////////////////////////////////
@@ -109,7 +109,7 @@ void cleanUpAndExit() {
     //
     short id = -1;
     errorCode = SetSystemParameter(SELECT_TRANSMITTER, &id, sizeof(id));
-    if (errorCode != BIRD_ERROR_SUCCESS) CTrackstar::errorHandler(errorCode, __LINE__);
+    if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
 }
 
 //Init commit for Control loop code
@@ -164,7 +164,7 @@ int main(int argc, char *argv[]) {
                 state = INIT_TRACKSTAR;
                 break;
             case INIT_TRACKSTAR:
-                CTrackstar::initTxRx();
+                initTxRx();
                 state = READ_TRACKSTAR;
 
                 break;
@@ -177,7 +177,7 @@ int main(int argc, char *argv[]) {
                     printf("\t-----------\n");
                 }
                 if (data_count < RECORD_CNT) {
-                    retRecord = CTrackstar::readATI(SENSOR_ID_LEFT);
+                    retRecord = readATI(SENSOR_ID_LEFT);
                     data_count++;
                     printf("%4ld [%d] %8.3f %8.3f %8.3f: %8.2f %8.2f %8.2f\n",
                            data_count,

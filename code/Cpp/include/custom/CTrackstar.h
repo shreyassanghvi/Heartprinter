@@ -28,14 +28,11 @@ class CBoard
 public:
 	BOARD_CONFIGURATION		m_config;
 };
-class CTrackstar
-{
-public:
-	static int kbhit(void);
-	static void initTxRx(void);
-	static void errorHandler(int error, int lineNum);
-	static DOUBLE_POSITION_ANGLES_RECORD readATI(short sensID);
-};
+
+int kbhit(void);
+void initTxRx(void);
+void errorHandler(int error, int lineNum);
+DOUBLE_POSITION_ANGLES_RECORD readATI(short sensID);
 
 ///////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////

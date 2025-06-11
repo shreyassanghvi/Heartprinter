@@ -3,6 +3,7 @@
 
 // for Trackstar
 
+
 CSensor *pSensor; // a pointer to an array of sensor objects
 CXmtr *pXmtr; // a pointer to an array of transmitter objects
 CSystem ATC3DG; // a pointer to a single instance of the system class
@@ -17,7 +18,7 @@ CSystem ATC3DG; // a pointer to a single instance of the system class
  *
  * Note: This function is not portable and may not work on all systems.
  */
-int CTrackstar::kbhit(void) {
+int kbhit(void) {
 #if defined(__linux__) || defined(__APPLE__)
     termios oldt{}, newt{};
 
@@ -55,7 +56,7 @@ int CTrackstar::kbhit(void) {
 // like the console
 // Specific error codes should be parsed depending on the application.
 //
-void CTrackstar::errorHandler(int error, int lineNum) {
+void errorHandler(int error, int lineNum) {
     char buffer[1024];
     int currentError = error;
     int nextError;
@@ -97,7 +98,7 @@ void CTrackstar::errorHandler(int error, int lineNum) {
     exit(0);
 }
 
-void CTrackstar::initTxRx() {
+void initTxRx() {
     int errorCode; // used to hold error code returned from procedure call
     int i;
     int sensorID;
@@ -761,7 +762,7 @@ void CTrackstar::initTxRx() {
     //
 }
 
-DOUBLE_POSITION_ANGLES_RECORD CTrackstar::readATI(short sensID) {
+DOUBLE_POSITION_ANGLES_RECORD readATI(short sensID) {
     //////////////////////////////////////////////////////////////////////////////
     //////////////////////////////////////////////////////////////////////////////
     //////////////////////////////////////////////////////////////////////////////
