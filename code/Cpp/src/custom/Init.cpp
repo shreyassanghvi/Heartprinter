@@ -1,7 +1,7 @@
 //
 // Created by shreyas on 12/19/24.
 //
-#include "../../include/custom/init.h"
+#include "../../include/custom/Init.cpp.h"
 #include "../../include/custom/ATC3DG.h"
 
 // #define for various definitions for the DYNAMIXEL
@@ -291,17 +291,16 @@ int main(int argc, char *argv[]) {
                 state = END;
                 break;
             case END:
+                state = CLEANUP_MOTORS;
+                break;
+
+            case CLEANUP_MOTORS:
                 groupSyncWrite.clearParam();
                 for (auto motor: vMotors) {
                     motor.disableTorque(packetHandler, portHandler);
                 }
             // vMotors.clear();
                 portHandler->closePort();
-                state = CLEANUP_MOTORS;
-                break;
-
-            case CLEANUP_MOTORS:
-
                 state = CLEANUP_TRACKSTAR;
                 break;
             case CLEANUP_TRACKSTAR:
@@ -310,107 +309,9 @@ int main(int argc, char *argv[]) {
                     return EXIT_FAILURE;
                 }
                 return EXIT_SUCCESS;
-
-
             default:
+                state = ERR;
                 break;
         }
     }
-    // // collect as many records as specified in the command line
-
-
-    // printf("      -----------\n");
-    // for (int i = 0; i < RECORD_CNT; i++) {
-    //     short sensorID = 0;
-    //     retRecord = readATI(sensorID);
-    //     printf("%4d [%d] %8.3f %8.3f %8.3f: %8.2f %8.2f %8.2f\n",
-    //            i + 1,
-    //            sensorID,
-    //            retRecord.x, retRecord.y, retRecord.z,
-    //            retRecord.a, retRecord.e, retRecord.r
-    //     );
-    //     // while (true) {
-    //     // printf("Press any key to continue! (or press ESC to quit!)\n");
-    //     // if (getch() == ESC_ASCII_VALUE)
-    //     //     break;
-    //     // Add Dynamixel#1 goal position value to the Syncwrite storage
-    //     int motorPos[3] = {1, 2, 3};
-    //     if (retRecord.x < 30 || retRecord.x > -30) {
-    //         motorPos[0] = dxl_goal_position[0];
-    //     } else {
-    //         motorPos[0] = dxl_goal_position[1];
-    //     }
-    //     if (retRecord.y < 30) {
-    //         motorPos[1] = dxl_goal_position[0];
-    //     } else {
-    //         motorPos[1] = dxl_goal_position[1];
-    //     }
-    //     if (retRecord.z < 30) {
-    //         motorPos[2] = dxl_goal_position[0];
-    //     } else {
-    //         motorPos[2] = dxl_goal_position[1];
-    //     }
-    //
-    //
-    //     for (int j = 0; j < MOTOR_CNT; j++) {
-    //         if (vMotors[j].addGroupSyncWrite(&groupSyncWrite, motorPos[index]) != true) {
-    //             printf("GroupSyncWrite addGroupSyncWrite failed!\n");
-    //             break;
-    //         }
-    //     }
-    //     // Add Dynamixel#2 goal position value to the Syncwrite parameter storage
-    //     // if (dxl2.addGroupSyncWrite(&groupSyncWrite, dxl_goal_position[index]) != true) {
-    //     //     return EXIT_FAILURE;
-    //     // }
-    //
-    //     // Syncwrite goal position
-    //     dxl_comm_result = groupSyncWrite.txPacket();
-    //     if (dxl_comm_result != COMM_SUCCESS) printf("%s\n", packetHandler->getTxRxResult(dxl_comm_result));
-    //
-    //     // Clear syncwrite parameter storage
-    //     groupSyncWrite.clearParam();
-    //     bool exitFlag;
-    //
-    //     dxl_error = 0;
-    //     do {
-    //         // Syncread present position
-    //         dxl_comm_result = groupSyncRead.txRxPacket();
-    //         exitFlag = true;
-    //         for (int i = 0; i < MOTOR_CNT; i++) {
-    //             if (dxl_comm_result != COMM_SUCCESS) {
-    //                 printf("%s\n", packetHandler->getTxRxResult(dxl_comm_result));
-    //             } else {
-    //                 if (groupSyncRead.getError(vMotors[i].getMotorID(), &dxl_error)) {
-    //                     printf("[ID:%03d] %s\n", vMotors[i].getMotorID(), packetHandler->getRxPacketError(dxl_error));
-    //                 }
-    //             }
-    //         }
-    //
-    //         for (int i = 0; i < MOTOR_CNT; i++) {
-    //             // printf("[ID:%03d] GoalPos:%03d  PresPos:%03d\t", vMotors[i].getMotorID(),
-    //             // dxl_goal_position[index], vMotors[i].checkAndGetPresentPosition(&groupSyncRead));
-    //             exitFlag &= vMotors[i].checkIfAtGoalPosition(dxl_goal_position[index]);
-    //         }
-    //         // printf("\n");
-    //     } while (exitFlag);
-    //     //
-    //     // // Change goal position
-    //     // index = (index + 1) % 2;
-    // }
-    //
-    // cleanUpAndExit();
-    //
-    //
-    // for (int i = 0; i < MOTOR_CNT; i++) {
-    //     // // Disable Dynamixel#1 Torque
-    //     vMotors[i].disableTorque(packetHandler, portHandler);
-    // }
-    //
-    // // Close port
-    // portHandler->closePort();
-    //
-    // if (dxl_comm_result != COMM_SUCCESS) {
-    //     return EXIT_FAILURE;
-    // }
-    // return EXIT_SUCCESS;
 }
