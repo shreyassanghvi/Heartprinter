@@ -109,12 +109,6 @@ void initTxRx() {
     //////////////////////////////////////////////////////////////////////////////
     //////////////////////////////////////////////////////////////////////////////
     //
-    printf("\n\n");
-    printf("ATC3DG setup..\n");
-    //////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////
-    //
     // Initialize the ATC3DG driver and DLL
     //
     // It is always necessary to first initialize the ATC3DG "system". By
@@ -127,7 +121,8 @@ void initTxRx() {
     // permanent failure - contact tech support.
     // A call to InitializeBIRDSystem() does not return any information.
     //
-    printf("Initializing ATC3DG system...\n");
+    printf("\n\nInitializing ATC3DG system...");
+    printf("\n==========================================\n");
     errorCode = InitializeBIRDSystem();
     if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
     //////////////////////////////////////////////////////////////////////////////
@@ -152,16 +147,16 @@ void initTxRx() {
     //
     // The SYSTEM_CONFIGURATION structure filled out by the initialization proc
     // contains the following:
-    printf("Number Boards           = %d\n", ATC3DG.m_config.numberBoards);
-    printf("Number Sensors          = %d\n", ATC3DG.m_config.numberSensors);
-    printf("Number Transmitters     = %d\n\n", ATC3DG.m_config.numberTransmitters);
+    printf("Number Boards:\t\t\t\t%d\n", ATC3DG.m_config.numberBoards);
+    printf("Number Sensors:\t\t\t\t%d\n", ATC3DG.m_config.numberSensors);
+    printf("Number Transmitters:\t\t\t%d\n", ATC3DG.m_config.numberTransmitters);
 
-    printf("System AGC mode         = %d\n", ATC3DG.m_config.agcMode);
-    printf("Maximum Range           = %6.2f\n", ATC3DG.m_config.maximumRange);
-    printf("Measurement Rate        = %10.6f\n", ATC3DG.m_config.measurementRate);
-    printf("Metric Mode             = %d\n", ATC3DG.m_config.metric);
-    printf("Line Frequency          = %6.2f\n", ATC3DG.m_config.powerLineFrequency);
-    printf("Transmitter ID Running  = %d\n", ATC3DG.m_config.transmitterIDRunning);
+    // printf("System AGC mode         = %d\n", ATC3DG.m_config.agcMode);
+    // printf("Maximum Range           = %6.2f\n", ATC3DG.m_config.maximumRange);
+    // printf("Measurement Rate        = %10.6f\n", ATC3DG.m_config.measurementRate);
+    // printf("Metric Mode             = %d\n", ATC3DG.m_config.metric);
+    // printf("Line Frequency          = %6.2f\n", ATC3DG.m_config.powerLineFrequency);
+    // printf("Transmitter ID Running  = %d\n", ATC3DG.m_config.transmitterIDRunning);
 
     //////////////////////////////////////////////////////////////////////////////
     //////////////////////////////////////////////////////////////////////////////
@@ -212,62 +207,38 @@ void initTxRx() {
     // together with a pointer to a buffer for the result
     // As with all procedures an error code is returned
     //
-    printf("\nGetSystemParameter()");
-    printf("\n====================\n");
+    printf("\nCurrent System Parameters:");
+    printf("\n==========================================\n");
     //
     // SELECT_TRANSMITTER
     //
-    {
-        short buffer, *pBuffer = &buffer;
-        errorCode = GetSystemParameter(SELECT_TRANSMITTER, pBuffer, sizeof(buffer));
-        if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
-        printf("SELECT_TRANSMITTER: %d\n", buffer);
-    }
+    auto SYS_TX_ID = GET_SYSTEM_PARAMETER<short>(SELECT_TRANSMITTER);
+    printf("SELECT_TRANSMITTER:\t\t\t%d\n", SYS_TX_ID);
     //
     // POWER_LINE_FREQUENCY
     //
-    {
-        double buffer, *pBuffer = &buffer;
-        errorCode = GetSystemParameter(POWER_LINE_FREQUENCY, pBuffer, sizeof(buffer));
-        if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
-        printf("POWER_LINE_FREQUENCY: %5.2f\n", buffer);
-    }
+    auto SYS_POWER_LINE_FREQUENCY = GET_SYSTEM_PARAMETER<double>(POWER_LINE_FREQUENCY);
+    printf("POWER_LINE_FREQUENCY:\t\t\t%5.2f\n", SYS_POWER_LINE_FREQUENCY);
     //
     // AGC_MODE
     //
-    {
-        AGC_MODE_TYPE buffer, *pBuffer = &buffer;
-        errorCode = GetSystemParameter(AGC_MODE, pBuffer, sizeof(buffer));
-        if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
-        printf("AGC_MODE: %d\n", buffer);
-    }
+    auto SYS_AGC_MODE = GET_SYSTEM_PARAMETER<int>(AGC_MODE);
+    printf("AGC_MODE:\t\t\t\t%s\n", SYS_AGC_MODE==1?"SENSOR_AGC_ONLY":"TRANSMITTER_AND_SENSOR_AGC");
     //
     // MEASUREMENT_RATE
     //
-    {
-        double buffer, *pBuffer = &buffer;
-        errorCode = GetSystemParameter(MEASUREMENT_RATE, pBuffer, sizeof(buffer));
-        if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
-        printf("MEASUREMENT_RATE: %5.2f\n", buffer);
-    }
+    auto SYS_MEAS_RATE = GET_SYSTEM_PARAMETER<double>(MEASUREMENT_RATE);
+    printf("MEASUREMENT_RATE:\t\t\t%5.2f\n", SYS_MEAS_RATE);
     //
     // MAXIMUM_RANGE
     //
-    {
-        double buffer, *pBuffer = &buffer;
-        errorCode = GetSystemParameter(MAXIMUM_RANGE, pBuffer, sizeof(buffer));
-        if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
-        printf("MAXIMUM_RANGE: %5.2f\n", buffer);
-    }
+    auto SYS_MAX_RANGE = GET_SYSTEM_PARAMETER<double>(MAXIMUM_RANGE);
+    printf("MAXIMUM_RANGE:\t\t\t\t%5.2f\n", SYS_MAX_RANGE);
     //
     // METRIC
     //
-    {
-        BOOL buffer, *pBuffer = &buffer;
-        errorCode = GetSystemParameter(METRIC, pBuffer, sizeof(buffer));
-        if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
-        printf("METRIC: %d\n", buffer);
-    }
+    auto SYS_METRIC = GET_SYSTEM_PARAMETER<BOOL>(METRIC);
+    printf("METRIC:\t\t\t\t\t%s\n", SYS_METRIC==1?"TRUE":"FALSE");
 
     //////////////////////////////////////////////////////////////////////////////
     //////////////////////////////////////////////////////////////////////////////
@@ -276,20 +247,43 @@ void initTxRx() {
     //	The previous calls can simplified using the macros provided in SAMPLE2.H
     //  (printf statements are provided for clarity)
     //
-    printf("\nSetSystemParameter()");
-    printf("\n=============================\n");
-    printf("SELECT_TRANSMITTER:		0\n");
+    printf("\nSet System Parameters:");
+    printf("\n==========================================\n");
+    printf("SELECT_TRANSMITTER:\t\t\t0\n");
     SET_SYSTEM_PARAMETER(SELECT_TRANSMITTER, 0, __LINE__);
-    printf("POWER_LINE_FREQUENCY:   50.0\n");
+    printf("POWER_LINE_FREQUENCY:\t\t\t50.0\n");
     SET_SYSTEM_PARAMETER(POWER_LINE_FREQUENCY, 50.0, __LINE__);
-    printf("AGC_MODE:               SENSOR_AGC_ONLY\n");
+    printf("AGC_MODE:\t\t\t\tSENSOR_AGC_ONLY\n");
     SET_SYSTEM_PARAMETER(AGC_MODE, SENSOR_AGC_ONLY, __LINE__);
-    printf("MEASUREMENT_RATE:       75.0\n");
+    printf("MEASUREMENT_RATE:\t\t\t75.0\n");
     SET_SYSTEM_PARAMETER(MEASUREMENT_RATE, 75.0, __LINE__);
-    printf("MAXIMUM_RANGE:          72.0\n");
+    printf("MAXIMUM_RANGE:\t\t\t\t72.0\n");
     SET_SYSTEM_PARAMETER(MAXIMUM_RANGE, 72.0, __LINE__);
-    printf("METRIC:                 true\n");
+    printf("METRIC:\t\t\t\t\tTRUE\n");
     SET_SYSTEM_PARAMETER(METRIC, true, __LINE__);
+
+    //////////////////////////////////////////////////////////////////////////////
+    //////////////////////////////////////////////////////////////////////////////
+    //////////////////////////////////////////////////////////////////////////////
+    //
+    //  Restore angle align and reference frame default parameters so that
+    //  the reported position is meaningful
+    //
+    printf("\nSetting Defaults for Sensors");
+    printf("\n==========================================\n");
+    // initialize a structure of angles
+    DOUBLE_ANGLES_RECORD anglesRecord = {0, 0, 0};
+    for (sensorID = 0; sensorID < ATC3DG.m_config.numberSensors; sensorID++) {
+        printf("Sensor %d\n", sensorID);
+        printf("Data Format:\t\t\t\t12 (DOUBLE_POSITION_ANGLES)\n");
+        SET_SENSOR_PARAMETER(sensorID, DATA_FORMAT, DOUBLE_POSITION_ANGLES, __LINE__);
+        printf("Angle Align:\t\t\t\ta: %lf, e: %lf, r: %lf\n", anglesRecord.a, anglesRecord.e, anglesRecord.r);
+        SET_SENSOR_PARAMETER(sensorID, ANGLE_ALIGN, anglesRecord, __LINE__);
+        printf("HEMISPHERE:\t\t\t\t0 (FRONT)");
+        SET_SENSOR_PARAMETER(sensorID, HEMISPHERE, FRONT, __LINE__);
+        printf("\n=============================\n");
+    }
+
 
 
     //////////////////////////////////////////////////////////////////////////////
@@ -304,128 +298,93 @@ void initTxRx() {
     // is the 1st sensor in a system. This sensor will need to be attached for
     // these calls to respond without an error.
     //
-    printf("\nGetSensorParameter()");
-    printf("\n====================\n");
-    printf("Using sensor ID = 0\n");
-    sensorID = 0;
-    //
-    // DATA_FORMAT
-    //
-    {
-        DATA_FORMAT_TYPE buffer, *pBuffer = &buffer;
-        errorCode = GetSensorParameter(sensorID, DATA_FORMAT, pBuffer, sizeof(buffer));
-        if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
-        printf("DATA_FORMAT: %d\n", buffer);
-    }
-    //
-    // ANGLE_ALIGN
-    //
-    {
-        DOUBLE_ANGLES_RECORD buffer, *pBuffer = &buffer;
-        errorCode = GetSensorParameter(sensorID, ANGLE_ALIGN, pBuffer, sizeof(buffer));
-        if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
-        printf("ANGLE_ALIGN: %6.2f, %6.2f, %6.2f\n",
-               buffer.a,
-               buffer.e,
-               buffer.r);
-    }
-    //
-    // HEMISPHERE
-    //
-    {
-        HEMISPHERE_TYPE buffer, *pBuffer = &buffer;
-        errorCode = GetSensorParameter(sensorID, HEMISPHERE, pBuffer, sizeof(buffer));
-        if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
-        printf("HEMISPHERE: %4x\n", buffer);
-    }
-    //
-    // FILTER_AC_WIDE_NOTCH
-    //
-    {
-        BOOL buffer, *pBuffer = &buffer;
-        errorCode = GetSensorParameter(sensorID, FILTER_AC_WIDE_NOTCH, pBuffer, sizeof(buffer));
-        if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
-        printf("FILTER_AC_WIDE_NOTCH: %d\n", buffer);
-    }
-    //
-    // FILTER_AC_NARROW_NOTCH
-    //
-    {
-        BOOL buffer, *pBuffer = &buffer;
-        errorCode = GetSensorParameter(sensorID, FILTER_AC_NARROW_NOTCH, pBuffer, sizeof(buffer));
-        if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
-        printf("FILTER_AC_NARROW_NOTCH: %d\n", buffer);
-    }
-    //
-    // FILTER_DC_ADAPTIVE
-    //
-    {
-        double buffer, *pBuffer = &buffer;
-        errorCode = GetSensorParameter(sensorID, FILTER_DC_ADAPTIVE, pBuffer, sizeof(buffer));
-        if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
-        printf("FILTER_DC_ADAPTIVE: %5.2f\n", buffer);
-    }
-    //
-    // FILTER_ALPHA_PARAMETERS
-    //
-    {
-        ADAPTIVE_PARAMETERS buffer, *pBuffer = &buffer;
-        errorCode = GetSensorParameter(sensorID, FILTER_ALPHA_PARAMETERS, pBuffer, sizeof(buffer));
-        if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
+    printf("\nGet Sensor Parameters");
+    printf("\n==========================================\n");
+    for (sensorID = 0; sensorID < ATC3DG.m_config.numberSensors; sensorID++) {
+
+        printf("Sensor ID: %d\n", sensorID);
+        //
+        // DATA_FORMAT
+        //
+        auto SENSOR_DATA_FORMAT = GET_SENSOR_PARAMETER<DATA_FORMAT_TYPE>(sensorID, DATA_FORMAT);
+        printf("DATA_FORMAT: %d\n", SENSOR_DATA_FORMAT);
+        //
+        // ANGLE_ALIGN
+        //
+        auto SENSOR_ANGLE_ALIGN = GET_SENSOR_PARAMETER<DOUBLE_ANGLES_RECORD>(sensorID, ANGLE_ALIGN);
+        printf("ANGLE_ALIGN: %6.2f, %6.2f, %6.2f\n", SENSOR_ANGLE_ALIGN.a, SENSOR_ANGLE_ALIGN.e, SENSOR_ANGLE_ALIGN.r);
+        //
+        // HEMISPHERE
+        //
+        auto SENSOR_HEMISPHERE = GET_SENSOR_PARAMETER<HEMISPHERE_TYPE>(sensorID, HEMISPHERE);
+        printf("HEMISPHERE: %4x\n", SENSOR_HEMISPHERE);
+        //
+        // FILTER_AC_WIDE_NOTCH
+        //
+        auto SENSOR_FILTER_AC_WIDE_NOTCH = GET_SENSOR_PARAMETER<BOOL>(sensorID, FILTER_AC_WIDE_NOTCH);
+        printf("FILTER_AC_WIDE_NOTCH: %d\n", SENSOR_FILTER_AC_WIDE_NOTCH);
+        //
+        // FILTER_AC_NARROW_NOTCH
+        //
+        auto SENSOR_FILTER_AC_NARROW_NOTCH = GET_SENSOR_PARAMETER<BOOL>(sensorID, FILTER_AC_NARROW_NOTCH);
+        printf("FILTER_AC_NARROW_NOTCH: %d\n", SENSOR_FILTER_AC_NARROW_NOTCH);
+        //
+        // FILTER_DC_ADAPTIVE
+        //
+        auto SENSOR_FILTER_DC_ADAPTIVE = GET_SENSOR_PARAMETER<double>(sensorID, FILTER_DC_ADAPTIVE);
+        printf("FILTER_DC_ADAPTIVE: %5.2f\n", SENSOR_FILTER_DC_ADAPTIVE);
+        //
+        // FILTER_ALPHA_PARAMETERS
+        //
+        auto SENSOR_FILTER_ALPHA_PARAMETERS = GET_SENSOR_PARAMETER<ADAPTIVE_PARAMETERS>(
+            sensorID, FILTER_ALPHA_PARAMETERS);
         printf("FILTER_ALPHA_PARAMETERS:\n");
         printf("    Alpha max   %5d, %5d, %5d, %5d, %5d, %5d, %5d\n",
-               buffer.alphaMax[0],
-               buffer.alphaMax[1],
-               buffer.alphaMax[2],
-               buffer.alphaMax[3],
-               buffer.alphaMax[4],
-               buffer.alphaMax[5],
-               buffer.alphaMax[6]
+               SENSOR_FILTER_ALPHA_PARAMETERS.alphaMax[0],
+               SENSOR_FILTER_ALPHA_PARAMETERS.alphaMax[1],
+               SENSOR_FILTER_ALPHA_PARAMETERS.alphaMax[2],
+               SENSOR_FILTER_ALPHA_PARAMETERS.alphaMax[3],
+               SENSOR_FILTER_ALPHA_PARAMETERS.alphaMax[4],
+               SENSOR_FILTER_ALPHA_PARAMETERS.alphaMax[5],
+               SENSOR_FILTER_ALPHA_PARAMETERS.alphaMax[6]
         );
         printf("    Alpha Min   %5d, %5d, %5d, %5d, %5d, %5d, %5d\n",
-               buffer.alphaMin[0],
-               buffer.alphaMin[1],
-               buffer.alphaMin[2],
-               buffer.alphaMin[3],
-               buffer.alphaMin[4],
-               buffer.alphaMin[5],
-               buffer.alphaMin[6]
+               SENSOR_FILTER_ALPHA_PARAMETERS.alphaMin[0],
+               SENSOR_FILTER_ALPHA_PARAMETERS.alphaMin[1],
+               SENSOR_FILTER_ALPHA_PARAMETERS.alphaMin[2],
+               SENSOR_FILTER_ALPHA_PARAMETERS.alphaMin[3],
+               SENSOR_FILTER_ALPHA_PARAMETERS.alphaMin[4],
+               SENSOR_FILTER_ALPHA_PARAMETERS.alphaMin[5],
+               SENSOR_FILTER_ALPHA_PARAMETERS.alphaMin[6]
         );
         printf("    Vm          %5d, %5d, %5d, %5d, %5d, %5d, %5d\n",
-               buffer.vm[0],
-               buffer.vm[1],
-               buffer.vm[2],
-               buffer.vm[3],
-               buffer.vm[4],
-               buffer.vm[5],
-               buffer.vm[6]
+               SENSOR_FILTER_ALPHA_PARAMETERS.vm[0],
+               SENSOR_FILTER_ALPHA_PARAMETERS.vm[1],
+               SENSOR_FILTER_ALPHA_PARAMETERS.vm[2],
+               SENSOR_FILTER_ALPHA_PARAMETERS.vm[3],
+               SENSOR_FILTER_ALPHA_PARAMETERS.vm[4],
+               SENSOR_FILTER_ALPHA_PARAMETERS.vm[5],
+               SENSOR_FILTER_ALPHA_PARAMETERS.vm[6]
         );
-        printf("    On/Off      %5d\n", buffer.alphaOn);
-    }
-    //
-    // FILTER_LARGE_CHANGE
-    //
-    {
-        BOOL buffer, *pBuffer = &buffer;
-        errorCode = GetSensorParameter(sensorID, FILTER_LARGE_CHANGE, pBuffer, sizeof(buffer));
-        if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
-        printf("FILTER_LARGE_CHANGE: %d\n", buffer);
-    }
-    //
-    // QUALITY
-    //
-    {
-        QUALITY_PARAMETERS buffer, *pBuffer = &buffer;
-        errorCode = GetSensorParameter(sensorID, QUALITY, pBuffer, sizeof(buffer));
-        if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
-        printf("QUALITY: %d, %d, %d, %d\n",
-               buffer.error_offset,
-               buffer.error_sensitivity,
-               buffer.error_slope,
-               buffer.filter_alpha
-        );
-    }
+        printf("    On/Off      %5d\n", SENSOR_FILTER_ALPHA_PARAMETERS.alphaOn);
+        //
+        // FILTER_LARGE_CHANGE
+        //
+        auto SENSOR_FILTER_LARGE_CHANGE = GET_SENSOR_PARAMETER<BOOL>(sensorID, FILTER_LARGE_CHANGE);
+        printf("FILTER_LARGE_CHANGE: %d\n", SENSOR_FILTER_LARGE_CHANGE);
 
+        //
+        // QUALITY
+        //
+        auto SENSOR_QUALITY = GET_SENSOR_PARAMETER<QUALITY_PARAMETERS>(sensorID, QUALITY);
+        printf("QUALITY: %d, %d, %d, %d",
+               SENSOR_QUALITY.error_offset,
+               SENSOR_QUALITY.error_sensitivity,
+               SENSOR_QUALITY.error_slope,
+               SENSOR_QUALITY.filter_alpha
+        );
+        printf("\n=============================\n");
+    }
 
     //////////////////////////////////////////////////////////////////////////////
     //////////////////////////////////////////////////////////////////////////////
@@ -439,181 +398,61 @@ void initTxRx() {
     // is the 1st sensor in a system. This sensor will need to be attached for
     // these calls to respond without an error.
     //
-    printf("\nSetSensorParameter()");
-    printf("\n====================\n");
-    printf("Using sensor ID = 0\n");
-    sensorID = 0;
-
-    // If we use the macros provided in SAMPLE2.H we can simplify
-    // the sensor parameter setting as follows:
-
-    printf("DATA_FORMAT:             DOUBLE_POSITION_ANGLES_TIME_STAMP\n");
-    SET_SENSOR_PARAMETER(sensorID, DATA_FORMAT, DOUBLE_POSITION_ANGLES_TIME_STAMP, __LINE__);
-    printf("ANGLE_ALIGN:             30, 45, 60\n"); {
-        // initialize a structure of angles
-        DOUBLE_ANGLES_RECORD anglesRecord = {30, 45, 60};
-        SET_SENSOR_PARAMETER(sensorID, ANGLE_ALIGN, anglesRecord, __LINE__);
-    }
-    printf("HEMISPHERE:              TOP\n");
-    SET_SENSOR_PARAMETER(sensorID, HEMISPHERE, TOP, __LINE__);
-    printf("FILTER_AC_WIDE_NOTCH:    true\n");
-    SET_SENSOR_PARAMETER(sensorID, FILTER_AC_WIDE_NOTCH, true, __LINE__);
-    printf("FILTER_AC_NARROW_NOTCH:  false\n");
-    SET_SENSOR_PARAMETER(sensorID, FILTER_AC_NARROW_NOTCH, false, __LINE__);
-    printf("FILTER_DC_ADAPTIVE:      1.0\n");
-    SET_SENSOR_PARAMETER(sensorID, FILTER_DC_ADAPTIVE, 1.0, __LINE__);
-    printf("FILTER_ALPHA_PARAMETERS:\n");
-    printf("    alpha max    20000, 20000, 20000, 20000, 20000, 20000, 20000,\n");
-    printf("    alpha min      500,   500,   500,   500,   500,   500,   500,\n");
-    printf("    vm               2,     4,     8,    16,    32,    32,    32,\n");
-    printf("    on/off        true\n"); {
-        // initialize the alpha parameters
-        ADAPTIVE_PARAMETERS adaptiveRecord = {
-            500, 500, 500, 500, 500, 500, 500,
-            20000, 20000, 20000, 20000, 20000, 20000, 20000,
-            2, 4, 8, 16, 32, 32, 32,
-            true
-        };
-        SET_SENSOR_PARAMETER(sensorID, FILTER_ALPHA_PARAMETERS, adaptiveRecord, __LINE__);
-    }
-    printf("FILTER_LARGE_CHANGE:     false\n");
-    SET_SENSOR_PARAMETER(sensorID, FILTER_LARGE_CHANGE, false, __LINE__);
-    printf("QUALITY:                 15, 20, 16, 5\n"); {
-        // initialize the quality parameter structure
-        QUALITY_PARAMETERS qualityParameters = {15, 20, 16, 5};
-        SET_SENSOR_PARAMETER(sensorID, QUALITY, qualityParameters, __LINE__);
-    }
-
-
-    //////////////////////////////////////////////////////////////////////////////
-    //////////////////////////////////////////////////////////////////////////////
-    //////////////////////////////////////////////////////////////////////////////
+    // printf("\nSetSensorParameter()");
+    // for (sensorID = 0; sensorID < ATC3DG.m_config.numberSensors; sensorID++) {
+    //     printf("\n==========================================\n");
+    //     printf("Using sensor ID = %d\n", sensorID);
     //
-    // GetSensorParameter() [Repeat]
+    //     // If we use the macros provided in SAMPLE2.H we can simplify
+    //     // the sensor parameter setting as follows:
     //
+    //     printf("DATA_FORMAT:             DOUBLE_POSITION_ANGLES_TIME_STAMP\n");
+    //     SET_SENSOR_PARAMETER(sensorID, DATA_FORMAT, DOUBLE_POSITION_ANGLES_TIME_STAMP, __LINE__);
+    //     printf("ANGLE_ALIGN:             30, 45, 60\n"); {
+    //         // initialize a structure of angles
+    //         DOUBLE_ANGLES_RECORD anglesRecord = {30, 45, 60};
+    //         SET_SENSOR_PARAMETER(sensorID, ANGLE_ALIGN, anglesRecord, __LINE__);
+    //     }
+    //     printf("HEMISPHERE:              TOP\n");
+    //     SET_SENSOR_PARAMETER(sensorID, HEMISPHERE, TOP, __LINE__);
+    //     printf("FILTER_AC_WIDE_NOTCH:    true\n");
+    //     SET_SENSOR_PARAMETER(sensorID, FILTER_AC_WIDE_NOTCH, true, __LINE__);
+    //     printf("FILTER_AC_NARROW_NOTCH:  false\n");
+    //     SET_SENSOR_PARAMETER(sensorID, FILTER_AC_NARROW_NOTCH, false, __LINE__);
+    //     printf("FILTER_DC_ADAPTIVE:      1.0\n");
+    //     SET_SENSOR_PARAMETER(sensorID, FILTER_DC_ADAPTIVE, 1.0, __LINE__);
+    //     printf("FILTER_ALPHA_PARAMETERS:\n");
+    //     printf("    alpha max    20000, 20000, 20000, 20000, 20000, 20000, 20000,\n");
+    //     printf("    alpha min      500,   500,   500,   500,   500,   500,   500,\n");
+    //     printf("    vm               2,     4,     8,    16,    32,    32,    32,\n");
+    //     printf("    on/off        true\n"); {
+    //         // initialize the alpha parameters
+    //         ADAPTIVE_PARAMETERS adaptiveRecord = {
+    //             500, 500, 500, 500, 500, 500, 500,
+    //             20000, 20000, 20000, 20000, 20000, 20000, 20000,
+    //             2, 4, 8, 16, 32, 32, 32,
+    //             true
+    //         };
+    //         SET_SENSOR_PARAMETER(sensorID, FILTER_ALPHA_PARAMETERS, adaptiveRecord, __LINE__);
+    //     }
+    //     printf("FILTER_LARGE_CHANGE:     false\n");
+    //     SET_SENSOR_PARAMETER(sensorID, FILTER_LARGE_CHANGE, false, __LINE__);
+    //     printf("QUALITY:                 15, 20, 16, 5\n"); {
+    //         // initialize the quality parameter structure
+    //         QUALITY_PARAMETERS qualityParameters = {15, 20, 16, 5};
+    //         SET_SENSOR_PARAMETER(sensorID, QUALITY, qualityParameters, __LINE__);
+    //     }
+    // }
     //
-    printf("\nRepeat - GetSensorParameter()");
-    printf("\n=============================\n");
-    printf("Using sensor ID = 0\n");
-    sensorID = 0;
-    //
-    // DATA_FORMAT
-    //
-    {
-        DATA_FORMAT_TYPE buffer, *pBuffer = &buffer;
-        errorCode = GetSensorParameter(sensorID, DATA_FORMAT, pBuffer, sizeof(buffer));
-        if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
-        printf("DATA_FORMAT: %d\n", buffer);
-    }
-    //
-    // ANGLE_ALIGN
-    //
-    {
-        DOUBLE_ANGLES_RECORD buffer, *pBuffer = &buffer;
-        errorCode = GetSensorParameter(sensorID, ANGLE_ALIGN, pBuffer, sizeof(buffer));
-        if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
-        printf("ANGLE_ALIGN: %6.2f, %6.2f, %6.2f\n",
-               buffer.a,
-               buffer.e,
-               buffer.r);
-    }
-    //
-    // HEMISPHERE
-    //
-    {
-        HEMISPHERE_TYPE buffer, *pBuffer = &buffer;
-        errorCode = GetSensorParameter(sensorID, HEMISPHERE, pBuffer, sizeof(buffer));
-        if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
-        printf("HEMISPHERE: %4x\n", buffer);
-    }
-    //
-    // FILTER_AC_WIDE_NOTCH
-    //
-    {
-        BOOL buffer, *pBuffer = &buffer;
-        errorCode = GetSensorParameter(sensorID, FILTER_AC_WIDE_NOTCH, pBuffer, sizeof(buffer));
-        if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
-        printf("FILTER_AC_WIDE_NOTCH: %d\n", buffer);
-    }
-    //
-    // FILTER_AC_NARROW_NOTCH
-    //
-    {
-        BOOL buffer, *pBuffer = &buffer;
-        errorCode = GetSensorParameter(sensorID, FILTER_AC_NARROW_NOTCH, pBuffer, sizeof(buffer));
-        if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
-        printf("FILTER_AC_NARROW_NOTCH: %d\n", buffer);
-    }
-    //
-    // FILTER_DC_ADAPTIVE
-    //
-    {
-        double buffer, *pBuffer = &buffer;
-        errorCode = GetSensorParameter(sensorID, FILTER_DC_ADAPTIVE, pBuffer, sizeof(buffer));
-        if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
-        printf("FILTER_DC_ADAPTIVE: %5.2f\n", buffer);
-    }
-    //
-    // FILTER_ALPHA_PARAMETERS
-    //
-    {
-        ADAPTIVE_PARAMETERS buffer, *pBuffer = &buffer;
-        errorCode = GetSensorParameter(sensorID, FILTER_ALPHA_PARAMETERS, pBuffer, sizeof(buffer));
-        if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
-        printf("FILTER_ALPHA_PARAMETERS:\n");
-        printf("    Alpha max   %5d, %5d, %5d, %5d, %5d, %5d, %5d\n",
-               buffer.alphaMax[0],
-               buffer.alphaMax[1],
-               buffer.alphaMax[2],
-               buffer.alphaMax[3],
-               buffer.alphaMax[4],
-               buffer.alphaMax[5],
-               buffer.alphaMax[6]
-        );
-        printf("    Alpha Min   %5d, %5d, %5d, %5d, %5d, %5d, %5d\n",
-               buffer.alphaMin[0],
-               buffer.alphaMin[1],
-               buffer.alphaMin[2],
-               buffer.alphaMin[3],
-               buffer.alphaMin[4],
-               buffer.alphaMin[5],
-               buffer.alphaMin[6]
-        );
-        printf("    Vm          %5d, %5d, %5d, %5d, %5d, %5d, %5d\n",
-               buffer.vm[0],
-               buffer.vm[1],
-               buffer.vm[2],
-               buffer.vm[3],
-               buffer.vm[4],
-               buffer.vm[5],
-               buffer.vm[6]
-        );
-        printf("    On/Off      %5d\n", buffer.alphaOn);
-    }
-    //
-    // FILTER_LARGE_CHANGE
-    //
-    {
-        BOOL buffer, *pBuffer = &buffer;
-        errorCode = GetSensorParameter(sensorID, FILTER_LARGE_CHANGE, pBuffer, sizeof(buffer));
-        if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
-        printf("FILTER_LARGE_CHANGE: %d\n", buffer);
-    }
-    //
-    // QUALITY
-    //
-    {
-        QUALITY_PARAMETERS buffer, *pBuffer = &buffer;
-        errorCode = GetSensorParameter(sensorID, QUALITY, pBuffer, sizeof(buffer));
-        if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
-        printf("QUALITY: %d, %d, %d, %d\n",
-               buffer.error_offset,
-               buffer.error_sensitivity,
-               buffer.error_slope,
-               buffer.filter_alpha
-        );
-    }
-
+    printf("\nSetting Defaults for Transmitters");
+    printf("\n==========================================\n");
+    transmitterID = 0;
+    printf("Transmitter %d\n", transmitterID);
+    printf("REFERENCE_FRAME:\t\t\ta: %lf, e: %lf, r: %lf\n", anglesRecord.a, anglesRecord.e, anglesRecord.r);
+    SET_TRANSMITTER_PARAMETER(transmitterID, REFERENCE_FRAME, anglesRecord, __LINE__);
+    printf("XYZ_REFERENCE_FRAME:\t\t\tFALSE");
+    SET_TRANSMITTER_PARAMETER(transmitterID, XYZ_REFERENCE_FRAME, false, __LINE__);
+    printf("\n==========================================\n");
 
     //////////////////////////////////////////////////////////////////////////////
     //////////////////////////////////////////////////////////////////////////////
@@ -626,32 +465,29 @@ void initTxRx() {
     // the Transmitter ID parameter. For the purpose of this exercise the ID = 0. This
     // is the 1st transmitter in a system.
     //
-    printf("\nGetTransmitterParameter()");
-    printf("\n=========================\n");
+    printf("\nGet Transmitter Parameter");
+    printf("\n==========================================\n");
     printf("Using transmitter ID = 0\n");
     transmitterID = 0;
     //
     // REFERENCE_FRAME
     //
-    {
-        DOUBLE_ANGLES_RECORD buffer, *pBuffer = &buffer;
-        errorCode = GetTransmitterParameter(transmitterID, REFERENCE_FRAME, pBuffer, sizeof(buffer));
-        if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
-        printf("REFERENCE_FRAME: %6.2f, %6.2f, %6.2f\n",
-               buffer.a,
-               buffer.e,
-               buffer.r);
-    }
-
+    auto referenceFrame = GET_TRANSMITTER_PARAMETER<DOUBLE_ANGLES_RECORD>(transmitterID, REFERENCE_FRAME);
+    printf("REFERENCE_FRAME: %6.2f, %6.2f, %6.2f\n",
+           referenceFrame.a,
+           referenceFrame.e,
+           referenceFrame.r);
     //
     // XYZ_REFERENCE_FRAME
     //
-    {
-        BOOL buffer, *pBuffer = &buffer;
-        errorCode = GetTransmitterParameter(transmitterID, XYZ_REFERENCE_FRAME, pBuffer, sizeof(buffer));
-        if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
-        printf("XYZ_REFERENCE_FRAME: %d\n", buffer);
-    }
+    // {
+    //     BOOL buffer, *pBuffer = &buffer;
+    //     errorCode = GetTransmitterParameter(transmitterID, XYZ_REFERENCE_FRAME, pBuffer, sizeof(buffer));
+    //     if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
+    //     printf("XYZ_REFERENCE_FRAME: %d\n", buffer);
+    // }
+    auto xyzReferenceFrame = GET_TRANSMITTER_PARAMETER<BOOL>(transmitterID, XYZ_REFERENCE_FRAME);
+    printf("XYZ_REFERENCE_FRAME: %d\n", xyzReferenceFrame);
 
 
     //////////////////////////////////////////////////////////////////////////////
@@ -665,22 +501,22 @@ void initTxRx() {
     // the Transmitter ID parameter. For the purpose of this exercise the ID = 0. This
     // is the 1st transmitter in a system.
     //
-    printf("\nSetTransmitterParameter()");
-    printf("\n=========================\n");
-    printf("Using transmitter ID = 0\n");
-    transmitterID = 0;
-
-    // If we use the macros provided in SAMPLE2.H we can simplify
-    // the transmitter parameter setting as follows:
-
-    printf("REFERENCE_FRAME:         60, 45, 30\n"); {
-        // initialize a structure of angles
-        DOUBLE_ANGLES_RECORD anglesRecord = {60, 45, 30};
-        SET_TRANSMITTER_PARAMETER(transmitterID, REFERENCE_FRAME, anglesRecord, __LINE__);
-    }
-    printf("XYZ_REFERENCE_FRAME:     true\n");
-    SET_TRANSMITTER_PARAMETER(transmitterID, XYZ_REFERENCE_FRAME, true, __LINE__);
-
+    // printf("\nSetTransmitterParameter()");
+    // printf("\n==========================================\n");
+    // printf("Using transmitter ID = 0\n");
+    // transmitterID = 0;
+    //
+    // // If we use the macros provided in SAMPLE2.H we can simplify
+    // // the transmitter parameter setting as follows:
+    //
+    // printf("REFERENCE_FRAME:         60, 45, 30\n"); {
+    //     // initialize a structure of angles
+    //     DOUBLE_ANGLES_RECORD anglesRecord = {60, 45, 30};
+    //     SET_TRANSMITTER_PARAMETER(transmitterID, REFERENCE_FRAME, anglesRecord, __LINE__);
+    // }
+    // printf("XYZ_REFERENCE_FRAME:     true\n");
+    // SET_TRANSMITTER_PARAMETER(transmitterID, XYZ_REFERENCE_FRAME, true, __LINE__);
+    //
 
     //////////////////////////////////////////////////////////////////////////////
     //////////////////////////////////////////////////////////////////////////////
@@ -689,31 +525,6 @@ void initTxRx() {
     // GetTransmitterParameter() [Repeat]
     //
     //
-    printf("\nRepeat - GetTransmitterParameter()");
-    printf("\n==================================\n");
-    printf("Using transmitter ID = 0\n");
-    transmitterID = 0;
-    //
-    // REFERENCE_FRAME
-    //
-    {
-        DOUBLE_ANGLES_RECORD buffer, *pBuffer = &buffer;
-        errorCode = GetTransmitterParameter(transmitterID, REFERENCE_FRAME, pBuffer, sizeof(buffer));
-        if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
-        printf("REFERENCE_FRAME: %6.2f, %6.2f, %6.2f\n",
-               buffer.a,
-               buffer.e,
-               buffer.r);
-    }
-    //
-    // XYZ_REFERENCE_FRAME
-    //
-    {
-        BOOL buffer, *pBuffer = &buffer;
-        errorCode = GetTransmitterParameter(transmitterID, XYZ_REFERENCE_FRAME, pBuffer, sizeof(buffer));
-        if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
-        printf("XYZ_REFERENCE_FRAME: %d\n", buffer);
-    }
 
     //////////////////////////////////////////////////////////////////////////////
     //////////////////////////////////////////////////////////////////////////////
@@ -721,37 +532,16 @@ void initTxRx() {
     //
     // Search for the first attached transmitter and turn it on
     //
-    for (id = 0; id < ATC3DG.m_config.numberTransmitters; id++) {
-        if ((pXmtr + id)->m_config.attached) {
-            // Transmitter selection is a system function.
-            // Using the SELECT_TRANSMITTER parameter we send the id of the
-            // transmitter that we want to run with the SetSystemParameter() call
-            errorCode = SetSystemParameter(SELECT_TRANSMITTER, &id, sizeof(id));
-            if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
-            break;
-        }
-    }
-
-    //////////////////////////////////////////////////////////////////////////////
-    //////////////////////////////////////////////////////////////////////////////
-    //////////////////////////////////////////////////////////////////////////////
-    //
-    //  Restore angle align and reference frame default parameters so that
-    //  the reported position is meaningful
-    //
-    printf("\nRestore defaults for sensor/transmitter #0");
-    printf("\n==========================================\n");
-    sensorID = 0;
-    transmitterID = 0;
-    // initialize a structure of angles
-    DOUBLE_ANGLES_RECORD anglesRecord = {0, 0, 0};
-
-    SET_SENSOR_PARAMETER(sensorID, DATA_FORMAT, DOUBLE_POSITION_ANGLES, __LINE__);
-    SET_SENSOR_PARAMETER(sensorID, ANGLE_ALIGN, anglesRecord, __LINE__);
-    SET_SENSOR_PARAMETER(sensorID, HEMISPHERE, FRONT, __LINE__);
-
-    SET_TRANSMITTER_PARAMETER(transmitterID, REFERENCE_FRAME, anglesRecord, __LINE__);
-    SET_TRANSMITTER_PARAMETER(transmitterID, XYZ_REFERENCE_FRAME, false, __LINE__);
+    // for (id = 0; id < ATC3DG.m_config.numberTransmitters; id++) {
+    //     if ((pXmtr + id)->m_config.attached) {
+    //         // Transmitter selection is a system function.
+    //         // Using the SELECT_TRANSMITTER parameter we send the id of the
+    //         // transmitter that we want to run with the SetSystemParameter() call
+    //         errorCode = SetSystemParameter(SELECT_TRANSMITTER, &id, sizeof(id));
+    //         if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
+    //         break;
+    //     }
+    // }
 
 
     //////////////////////////////////////////////////////////////////////////////

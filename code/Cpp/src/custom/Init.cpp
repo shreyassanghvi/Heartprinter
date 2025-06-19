@@ -56,10 +56,7 @@ int getch() {
 #endif
 }
 
-
-int initMotors(Motor motors) {
-    uint8_t dxl_error = 0; // Dynamixel error
-    // Open port
+int setupMotorPort() {
     if (portHandler->openPort()) {
         printf("Succeeded to open the port!\n");
     } else {
@@ -78,12 +75,16 @@ int initMotors(Motor motors) {
         getch();
         return EXIT_FAILURE;
     }
-    dxl_error = 0;
 
+    return EXIT_SUCCESS;
+}
+
+int initMotors(Motor motors) {
+    uint8_t dxl_error = 0; // Dynamixel error
     motors.setMotorOperationMode(packetHandler, portHandler, EXTENDED_POSITION_CONTROL_MODE);
     // Enable Dynamixel#i Torque
     dxl_error += motors.enableTorque(packetHandler, portHandler);
-
+    printf("=============================\n");
     if (dxl_error != 0) {
         return EXIT_FAILURE;
     }
@@ -139,8 +140,17 @@ int main(int argc, char *argv[]) {
                 dxl_comm_result = COMM_SUCCESS;
                 groupSyncWrite.clearParam();
                 state = INIT_MOTORS;
+                printf("\n=====================================\n");
                 break;
             case INIT_MOTORS:
+                printf("Initializing motors...");
+                printf("\n=====================================\n");
+                if (setupMotorPort()) {
+                    state = ERR;
+                    ERR_FLG = 1;
+                    break;
+                }
+                printf("=============================\n");
                 for (int i = 0; i < MOTOR_CNT; i++) {
                     motor_destination[i] = 0;
                     vMotors.emplace_back(i);
@@ -305,6 +315,7 @@ int main(int argc, char *argv[]) {
                 break;
             case CLEANUP_TRACKSTAR:
                 cleanUpAndExit();
+                printf("\n=====================================\n");
                 if (ERR_FLG != 0) {
                     return EXIT_FAILURE;
                 }
