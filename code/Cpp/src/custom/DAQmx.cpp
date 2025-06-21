@@ -20,7 +20,7 @@
 int32 CVICALLBACK EveryNCallback(TaskHandle taskHandle, int32 everyNsamplesEventType, uInt32 nSamples, void *callbackData);
 int32 CVICALLBACK DoneCallback(TaskHandle taskHandle, int32 status, void *callbackData);
 
-int main_d(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
     int32       error = 0;
     TaskHandle  taskHandle = nullptr;

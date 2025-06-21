@@ -386,64 +386,6 @@ void initTxRx() {
         printf("\n=============================\n");
     }
 
-    //////////////////////////////////////////////////////////////////////////////
-    //////////////////////////////////////////////////////////////////////////////
-    //////////////////////////////////////////////////////////////////////////////
-    //
-    // SetSensorParameter()
-    //
-    // This procedure allows the user to change selected sensor parameters. The
-    // procedure is directed at a specific sensor by selecting that sensor with
-    // the Sensor ID parameter. For the purpose of this exercise the ID = 0. This
-    // is the 1st sensor in a system. This sensor will need to be attached for
-    // these calls to respond without an error.
-    //
-    // printf("\nSetSensorParameter()");
-    // for (sensorID = 0; sensorID < ATC3DG.m_config.numberSensors; sensorID++) {
-    //     printf("\n==========================================\n");
-    //     printf("Using sensor ID = %d\n", sensorID);
-    //
-    //     // If we use the macros provided in SAMPLE2.H we can simplify
-    //     // the sensor parameter setting as follows:
-    //
-    //     printf("DATA_FORMAT:             DOUBLE_POSITION_ANGLES_TIME_STAMP\n");
-    //     SET_SENSOR_PARAMETER(sensorID, DATA_FORMAT, DOUBLE_POSITION_ANGLES_TIME_STAMP, __LINE__);
-    //     printf("ANGLE_ALIGN:             30, 45, 60\n"); {
-    //         // initialize a structure of angles
-    //         DOUBLE_ANGLES_RECORD anglesRecord = {30, 45, 60};
-    //         SET_SENSOR_PARAMETER(sensorID, ANGLE_ALIGN, anglesRecord, __LINE__);
-    //     }
-    //     printf("HEMISPHERE:              TOP\n");
-    //     SET_SENSOR_PARAMETER(sensorID, HEMISPHERE, TOP, __LINE__);
-    //     printf("FILTER_AC_WIDE_NOTCH:    true\n");
-    //     SET_SENSOR_PARAMETER(sensorID, FILTER_AC_WIDE_NOTCH, true, __LINE__);
-    //     printf("FILTER_AC_NARROW_NOTCH:  false\n");
-    //     SET_SENSOR_PARAMETER(sensorID, FILTER_AC_NARROW_NOTCH, false, __LINE__);
-    //     printf("FILTER_DC_ADAPTIVE:      1.0\n");
-    //     SET_SENSOR_PARAMETER(sensorID, FILTER_DC_ADAPTIVE, 1.0, __LINE__);
-    //     printf("FILTER_ALPHA_PARAMETERS:\n");
-    //     printf("    alpha max    20000, 20000, 20000, 20000, 20000, 20000, 20000,\n");
-    //     printf("    alpha min      500,   500,   500,   500,   500,   500,   500,\n");
-    //     printf("    vm               2,     4,     8,    16,    32,    32,    32,\n");
-    //     printf("    on/off        true\n"); {
-    //         // initialize the alpha parameters
-    //         ADAPTIVE_PARAMETERS adaptiveRecord = {
-    //             500, 500, 500, 500, 500, 500, 500,
-    //             20000, 20000, 20000, 20000, 20000, 20000, 20000,
-    //             2, 4, 8, 16, 32, 32, 32,
-    //             true
-    //         };
-    //         SET_SENSOR_PARAMETER(sensorID, FILTER_ALPHA_PARAMETERS, adaptiveRecord, __LINE__);
-    //     }
-    //     printf("FILTER_LARGE_CHANGE:     false\n");
-    //     SET_SENSOR_PARAMETER(sensorID, FILTER_LARGE_CHANGE, false, __LINE__);
-    //     printf("QUALITY:                 15, 20, 16, 5\n"); {
-    //         // initialize the quality parameter structure
-    //         QUALITY_PARAMETERS qualityParameters = {15, 20, 16, 5};
-    //         SET_SENSOR_PARAMETER(sensorID, QUALITY, qualityParameters, __LINE__);
-    //     }
-    // }
-    //
     printf("\nSetting Defaults for Transmitters");
     printf("\n==========================================\n");
     transmitterID = 0;
@@ -480,76 +422,9 @@ void initTxRx() {
     //
     // XYZ_REFERENCE_FRAME
     //
-    // {
-    //     BOOL buffer, *pBuffer = &buffer;
-    //     errorCode = GetTransmitterParameter(transmitterID, XYZ_REFERENCE_FRAME, pBuffer, sizeof(buffer));
-    //     if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
-    //     printf("XYZ_REFERENCE_FRAME: %d\n", buffer);
-    // }
     auto xyzReferenceFrame = GET_TRANSMITTER_PARAMETER<BOOL>(transmitterID, XYZ_REFERENCE_FRAME);
     printf("XYZ_REFERENCE_FRAME: %d\n", xyzReferenceFrame);
 
-
-    //////////////////////////////////////////////////////////////////////////////
-    //////////////////////////////////////////////////////////////////////////////
-    //////////////////////////////////////////////////////////////////////////////
-    //
-    // SetTransmitterParameter()
-    //
-    // This procedure allows the user to change selected transmitter parameters. The
-    // procedure is directed at a specific transmitter by selecting that transmitter with
-    // the Transmitter ID parameter. For the purpose of this exercise the ID = 0. This
-    // is the 1st transmitter in a system.
-    //
-    // printf("\nSetTransmitterParameter()");
-    // printf("\n==========================================\n");
-    // printf("Using transmitter ID = 0\n");
-    // transmitterID = 0;
-    //
-    // // If we use the macros provided in SAMPLE2.H we can simplify
-    // // the transmitter parameter setting as follows:
-    //
-    // printf("REFERENCE_FRAME:         60, 45, 30\n"); {
-    //     // initialize a structure of angles
-    //     DOUBLE_ANGLES_RECORD anglesRecord = {60, 45, 30};
-    //     SET_TRANSMITTER_PARAMETER(transmitterID, REFERENCE_FRAME, anglesRecord, __LINE__);
-    // }
-    // printf("XYZ_REFERENCE_FRAME:     true\n");
-    // SET_TRANSMITTER_PARAMETER(transmitterID, XYZ_REFERENCE_FRAME, true, __LINE__);
-    //
-
-    //////////////////////////////////////////////////////////////////////////////
-    //////////////////////////////////////////////////////////////////////////////
-    //////////////////////////////////////////////////////////////////////////////
-    //
-    // GetTransmitterParameter() [Repeat]
-    //
-    //
-
-    //////////////////////////////////////////////////////////////////////////////
-    //////////////////////////////////////////////////////////////////////////////
-    //////////////////////////////////////////////////////////////////////////////
-    //
-    // Search for the first attached transmitter and turn it on
-    //
-    // for (id = 0; id < ATC3DG.m_config.numberTransmitters; id++) {
-    //     if ((pXmtr + id)->m_config.attached) {
-    //         // Transmitter selection is a system function.
-    //         // Using the SELECT_TRANSMITTER parameter we send the id of the
-    //         // transmitter that we want to run with the SetSystemParameter() call
-    //         errorCode = SetSystemParameter(SELECT_TRANSMITTER, &id, sizeof(id));
-    //         if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
-    //         break;
-    //     }
-    // }
-
-
-    //////////////////////////////////////////////////////////////////////////////
-    //////////////////////////////////////////////////////////////////////////////
-    //////////////////////////////////////////////////////////////////////////////
-    //
-    //  Save system setup to an initialization file
-    //
 }
 
 DOUBLE_POSITION_ANGLES_RECORD readATI(short sensID) {

@@ -1,7 +1,7 @@
 //
 // Created by shreyas on 12/19/24.
 //
-#include "../../include/custom/Init.cpp.h"
+#include "../../include/custom/Init.h"
 #include "../../include/custom/ATC3DG.h"
 
 // #define for various definitions for the DYNAMIXEL
@@ -114,7 +114,7 @@ void cleanUpAndExit() {
 }
 
 //Init commit for Control loop code
-int main(int argc, char *argv[]) {
+int main_init(int argc, char *argv[]) {
     STATES state = START;
     // Motor motors[MOTOR_CNT];
     std::vector<Motor> vMotors;
