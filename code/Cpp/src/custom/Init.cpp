@@ -114,7 +114,7 @@ void cleanUpAndExit() {
 }
 
 //Init commit for Control loop code
-int main_init(int argc, char *argv[]) {
+int main(int argc, char *argv[]) {
     STATES state = START;
     // Motor motors[MOTOR_CNT];
     std::vector<Motor> vMotors;
@@ -124,7 +124,7 @@ int main_init(int argc, char *argv[]) {
     long data_count = 0;
     int ERR_FLG = 0;
     int motor_destination[MOTOR_CNT];
-
+    TaskHandle taskHandle = nullptr;
     DOUBLE_POSITION_ANGLES_RECORD retRecord;
     retRecord.a = 0;
     retRecord.e = 0;
@@ -175,9 +175,26 @@ int main_init(int argc, char *argv[]) {
                 break;
             case INIT_TRACKSTAR:
                 initTxRx();
-                state = READ_TRACKSTAR;
-
+                state = INIT_DAQ;
                 break;
+            case INIT_DAQ:
+                printf("=====================================\n");
+                printf("Initializing the daq...");
+                taskHandle = initDigitalOutputTask();
+                if (taskHandle == nullptr) {
+                    printf("Failed to initialize DAQ system\n");
+                    state = ERR;
+                    break;
+                }
+                printf("=====================================\n");
+                state = INIT_LOADCELL;
+                break;
+            case INIT_LOADCELL:
+                //TODO: Initialize load cell
+                printf("TODO: Initializing load cell...");
+                state = READ_TRACKSTAR;
+                break;
+
             case READ_TRACKSTAR:
                 if (data_count == 0) {
                     printf("=====================================\n");
@@ -311,6 +328,10 @@ int main_init(int argc, char *argv[]) {
                 }
             // vMotors.clear();
                 portHandler->closePort();
+                state = CLEANUP_DAQ;
+                break;
+            case CLEANUP_DAQ:
+                cleanupDigitalOutputTask(taskHandle);
                 state = CLEANUP_TRACKSTAR;
                 break;
             case CLEANUP_TRACKSTAR:

@@ -10,8 +10,8 @@
 *
 *********************************************************************/
 
-#include <stdio.h>
-#include <stdlib.h>
+#include <cstdio>
+#include <cstdlib>
 #include "../../include/NIDAQmx/NIDAQmx.h"
 
 #define DAQmxErrChk(functionCall) if( DAQmxFailed(error=(functionCall)) ) goto Error; else
@@ -20,7 +20,7 @@
 int32 CVICALLBACK EveryNCallback(TaskHandle taskHandle, int32 everyNsamplesEventType, uInt32 nSamples, void *callbackData);
 int32 CVICALLBACK DoneCallback(TaskHandle taskHandle, int32 status, void *callbackData);
 
-int main(int argc, char *argv[])
+int main_mainDAQ(int argc, char *argv[])
 {
     int32       error = 0;
     TaskHandle  taskHandle = nullptr;

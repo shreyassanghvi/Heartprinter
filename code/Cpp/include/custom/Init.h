@@ -18,6 +18,9 @@
 #include "ATC3DG.h"
 #include "CTrackstar.h"
 
+// NI DAQmx headers
+#include "NIDAQ.h"
+
 //Motor SDK Headers
 #include "../dynamixel_sdk/dynamixel_sdk.h"
 
@@ -31,6 +34,7 @@ enum STATES {
     INIT_MOTORS,
     INIT_TRACKSTAR,
     INIT_LOADCELL,
+    INIT_DAQ,
     READ_TRACKSTAR,
     READ_LOADCELL,
     READ_MOTORS,
@@ -38,6 +42,7 @@ enum STATES {
     MOVE_MOTORS,
     ERR,
     CLEANUP_MOTORS,
+    CLEANUP_DAQ,
     CLEANUP_TRACKSTAR,
     END
 };
