@@ -20,7 +20,7 @@
 #define SENSOR_ID_RIGHT                     2                  // Sensor ID to use for right
 #define SENSOR_ID_INJECTOR                  3                  // Sensor ID to use for injector
 
-
+STATES state;
 // Initialize PortHandler instance
 // Set the port path
 // Get methods and members of PortHandlerLinux or PortHandlerWindows
@@ -113,9 +113,18 @@ void cleanUpAndExit() {
     if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
 }
 
+void DataHandler(double *data, uInt32 numSamples) {
+    printf("Received %u samples. First: %.3f\n", numSamples, data[0]);
+}
+
+void ErrorHandler(const char *errorMessage) {
+    fprintf(stderr, "DAQ ERROR: %s\n", errorMessage);
+    // state = ERR;
+}
+
 //Init commit for Control loop code
 int main(int argc, char *argv[]) {
-    STATES state = START;
+    state = START;
     // Motor motors[MOTOR_CNT];
     std::vector<Motor> vMotors;
     int dxl_comm_result; // Communication result
@@ -124,7 +133,8 @@ int main(int argc, char *argv[]) {
     long data_count = 0;
     int ERR_FLG = 0;
     int motor_destination[MOTOR_CNT];
-    TaskHandle taskHandle = nullptr;
+
+    DAQSystem daqSystem;
     DOUBLE_POSITION_ANGLES_RECORD retRecord;
     retRecord.a = 0;
     retRecord.e = 0;
@@ -177,11 +187,18 @@ int main(int argc, char *argv[]) {
                 initTxRx();
                 state = INIT_DAQ;
                 break;
-            case INIT_DAQ:
+            case INIT_DAQ: {
                 printf("=====================================\n");
                 printf("Initializing the daq...");
-                taskHandle = initDigitalOutputTask();
-                if (taskHandle == nullptr) {
+                DigitalConfig digiConfig = {"Dev1", "PFI0:2"};
+                AnalogConfig analogConfig = {
+                    "Dev1", "ai0",
+                    0.0, 10.0,
+                    10000.0,
+                    1000
+                };
+                daqSystem = initDAQSystem(digiConfig, analogConfig, DataHandler, ErrorHandler);
+                if (!daqSystem.initialized) {
                     printf("Failed to initialize DAQ system\n");
                     state = ERR;
                     break;
@@ -189,6 +206,7 @@ int main(int argc, char *argv[]) {
                 printf("=====================================\n");
                 state = INIT_LOADCELL;
                 break;
+            }
             case INIT_LOADCELL:
                 //TODO: Initialize load cell
                 printf("TODO: Initializing load cell...");
@@ -331,7 +349,7 @@ int main(int argc, char *argv[]) {
                 state = CLEANUP_DAQ;
                 break;
             case CLEANUP_DAQ:
-                cleanupDigitalOutputTask(taskHandle);
+                cleanupDAQSystem(daqSystem);
                 state = CLEANUP_TRACKSTAR;
                 break;
             case CLEANUP_TRACKSTAR:
