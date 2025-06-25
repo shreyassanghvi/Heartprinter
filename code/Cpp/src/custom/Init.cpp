@@ -2,7 +2,7 @@
 // Created by shreyas on 12/19/24.
 //
 #include "../../include/custom/Init.h"
-#include "../../include/custom/ATC3DG.h"
+#include "../../include/Trackstar/ATC3DG.h"
 
 // #define for various definitions for the DYNAMIXEL
 #define PROTOCOL_VERSION                2.0                 // See which protocol version is used in the DYNAMIXEL

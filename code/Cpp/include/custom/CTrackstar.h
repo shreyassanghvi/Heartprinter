@@ -3,8 +3,8 @@
 //
 // very simple classes for the devices
 #include "conio.h"
-#include "ATC3DG.h"
-#include "StdAfx.h"
+#include "../Trackstar/ATC3DG.h"
+#include "../Trackstar/StdAfx.h"
 
 class CSystem {
 public:

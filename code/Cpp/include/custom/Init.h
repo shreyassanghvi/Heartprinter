@@ -14,15 +14,15 @@
 
 #include <conio.h>
 //ATI Trackstar headers
-#include "StdAfx.h"
-#include "ATC3DG.h"
+#include "../Trackstar/StdAfx.h"
+#include "../Trackstar/ATC3DG.h"
 #include "CTrackstar.h"
 
 // NI DAQmx headers
 #include "NIDAQ.h"
 
 //Motor SDK Headers
-#include "../dynamixel_sdk/dynamixel_sdk.h"
+#include "../Dynamixel_SDK/dynamixel_sdk.h"
 
 // userdefined headers
 

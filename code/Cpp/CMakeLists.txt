@@ -114,7 +114,7 @@ install(TARGETS dynamixel_sdk dynamixel_sdk_static
         RUNTIME DESTINATION bin
 )
 
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/dynamixel_sdk/ DESTINATION include
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/Dynamixel_SDK/ DESTINATION include
         FILES_MATCHING PATTERN "*.h"
 )
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/custom/ DESTINATION include
