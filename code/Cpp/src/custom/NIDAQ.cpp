@@ -6,6 +6,13 @@
 
 // Macro for DAQmx error handling
 #define DAQmxErrChk(functionCall) if( DAQmxFailed(error=(functionCall)) ) goto Error; else
+//static function declaration
+static int32 CVICALLBACK EveryNCallback(TaskHandle taskHandle, int32 everyNsamplesEventType,
+                                        uInt32 nSamples, void *callbackData);
+
+static int32 CVICALLBACK DoneCallback(TaskHandle taskHandle, int32 status,
+                                      void *callbackData);
+
 
 // -------------------- Digital Output Implementation --------------------
 int WriteDigitalState(TaskHandle taskHandle, uInt32 state) {
@@ -40,11 +47,11 @@ int ReadDigitalState(TaskHandle taskHandle) {
 
     DAQmxErrChk(DAQmxReadDigitalU32(
         taskHandle,
-        1,                  // numSampsPerChan
-        10.0,               // timeout
+        1, // numSampsPerChan
+        10.0, // timeout
         DAQmx_Val_GroupByChannel,
         &currentState,
-        1,                  // arraySizeInSamps
+        1, // arraySizeInSamps
         &read,
         nullptr
     ));
@@ -59,37 +66,60 @@ Error:
     return -1;
 }
 
-int setLEDOn(TaskHandle taskHandle, LED led) {
-    uInt32 currentState = static_cast<uInt32>(ReadDigitalState(taskHandle));
-    if (currentState == static_cast<uInt32>(-1)) return -1;
-
-    currentState |= (1 << static_cast<int>(led));
-    if (WriteDigitalState(taskHandle, currentState) == -1) {
-        return -1;
+int setLEDState(TaskHandle taskHandle, LED led, int state) {
+    auto currentState = static_cast<uInt32>(ReadDigitalState(taskHandle));
+    if (currentState == static_cast<uInt32>(-1)) return EXIT_FAILURE;
+    if (state != LED_ON && state != LED_OFF) {
+        printf("ERR: invalid LED state passed to setLEDState");
     }
-    return 0;
-}
-
-int setLEDOff(TaskHandle taskHandle, LED led) {
-    uInt32 currentState = static_cast<uInt32>(ReadDigitalState(taskHandle));
-    if (currentState == static_cast<uInt32>(-1)) return -1;
-
-    currentState &= ~(1 << static_cast<int>(led));
-    if (WriteDigitalState(taskHandle, currentState) == -1) {
-        return -1;
+    if (state == LED_ON) {
+        currentState |= (1 << static_cast<int>(led));
+    } else {
+        currentState &= ~(1 << static_cast<int>(led));
     }
-    return 0;
+    if (WriteDigitalState(taskHandle, currentState) == -1) {
+        return EXIT_FAILURE;
+    }
+    return EXIT_SUCCESS;
 }
 
-int setAllLEDsOn(TaskHandle taskHandle) {
-    return WriteDigitalState(taskHandle, 0x7);
-}
+// int setLEDOn(TaskHandle taskHandle, LED led) {
+//     uInt32 currentState = static_cast<uInt32>(ReadDigitalState(taskHandle));
+//     if (currentState == static_cast<uInt32>(-1)) return -1;
+//
+//     currentState |= (1 << static_cast<int>(led));
+//     if (WriteDigitalState(taskHandle, currentState) == -1) {
+//         return EXIT_FAILURE;
+//     }
+//     return EXIT_SUCCESS;
+// }
+//
+// int setLEDOff(TaskHandle taskHandle, LED led) {
+//     auto currentState = static_cast<uInt32>(ReadDigitalState(taskHandle));
+//     if (currentState == static_cast<uInt32>(-1)) return -1;
+//
+//     currentState &= ~(1 << static_cast<int>(led));
+//     if (WriteDigitalState(taskHandle, currentState) == -1) {
+//         return EXIT_FAILURE;
+//     }
+//     return EXIT_SUCCESS;
+// }
 
-int setAllLEDsOff(TaskHandle taskHandle) {
+int setAllLEDs(const TaskHandle taskHandle, const int state) {
+    if (state != LED_ON && state != LED_OFF) {
+        printf("ERR: invalid LED state passed to setAllLEDs");
+    }
+    if (state == LED_ON) {
+        return WriteDigitalState(taskHandle, 0x7);
+    }
     return WriteDigitalState(taskHandle, 0x0);
 }
 
-TaskHandle initDigitalOutputTask(const DigitalConfig& config) {
+// int setAllLEDsOff(TaskHandle taskHandle) {
+//     return WriteDigitalState(taskHandle, 0x0);
+// }
+
+TaskHandle initDigitalOutputTask(const DigitalConfig &config) {
     int32 error = 0;
     TaskHandle taskHandle = nullptr;
 
@@ -117,7 +147,7 @@ Error:
     return nullptr;
 }
 
-void cleanupDigitalOutputTask(TaskHandle taskHandle) {
+void cleanupDigitalOutputTask(const TaskHandle taskHandle) {
     if (taskHandle != nullptr) {
         DAQmxStopTask(taskHandle);
         DAQmxClearTask(taskHandle);
@@ -132,14 +162,10 @@ struct AnalogContext {
     uInt32 samplesPerCallback = 0;
 };
 
-static int32 CVICALLBACK EveryNCallback(TaskHandle taskHandle, int32 everyNsamplesEventType,
-                                        uInt32 nSamples, void* callbackData);
-static int32 CVICALLBACK DoneCallback(TaskHandle taskHandle, int32 status,
-                                      void* callbackData);
 
-void* DAQ_Init(const AnalogConfig& config, DataCallback dataCB, ErrorCallback errorCB) {
+void *DAQ_Init(const AnalogConfig &config, const DataCallback dataCB, const ErrorCallback errorCB) {
     int32 error = 0;
-    AnalogContext* ctx = new AnalogContext();
+    auto *ctx = new AnalogContext();
     ctx->dataCallback = dataCB;
     ctx->errorCallback = errorCB;
     ctx->samplesPerCallback = config.samplesPerCallback;
@@ -149,19 +175,19 @@ void* DAQ_Init(const AnalogConfig& config, DataCallback dataCB, ErrorCallback er
     char chanSpec[100];
     snprintf(chanSpec, sizeof(chanSpec), "%s/%s", config.device, config.channel);
     DAQmxErrChk(DAQmxCreateAIVoltageChan(ctx->taskHandle, chanSpec, "",
-                                       DAQmx_Val_Cfg_Default, config.minVoltage,
-                                       config.maxVoltage, DAQmx_Val_Volts, nullptr));
+        DAQmx_Val_Cfg_Default, config.minVoltage,
+        config.maxVoltage, DAQmx_Val_Volts, nullptr));
 
     // Configure timing and callbacks
     DAQmxErrChk(DAQmxCfgSampClkTiming(ctx->taskHandle, "", config.sampleRate,
-                                    DAQmx_Val_Rising, DAQmx_Val_ContSamps,
-                                    config.samplesPerCallback * 10));
+        DAQmx_Val_Rising, DAQmx_Val_ContSamps,
+        config.samplesPerCallback * 10));
     DAQmxErrChk(DAQmxRegisterEveryNSamplesEvent(ctx->taskHandle,
-                DAQmx_Val_Acquired_Into_Buffer, config.samplesPerCallback, 0,
-                EveryNCallback, ctx));
+        DAQmx_Val_Acquired_Into_Buffer, config.samplesPerCallback, 0,
+        EveryNCallback, ctx));
     DAQmxErrChk(DAQmxRegisterDoneEvent(ctx->taskHandle, 0, DoneCallback, ctx));
 
-    return static_cast<void*>(ctx);
+    return ctx;
 
 Error:
     if (error && errorCB) {
@@ -176,31 +202,36 @@ Error:
     return nullptr;
 }
 
-int DAQ_Start(void* handle) {
-    AnalogContext* ctx = reinterpret_cast<AnalogContext*>(handle);
-    if (!ctx) return -1;
+int DAQ_Start(void *handle) {
+    const auto *ctx = static_cast<AnalogContext *>(handle);
+    if (!ctx || !ctx->taskHandle) {
+        printf("ERR: incorrect handle passed to DAQ_Start\n");
+        return EXIT_FAILURE;
+    }
 
-    int32 error = DAQmxStartTask(ctx->taskHandle);
-    if (error) {
+    if (DAQmxStartTask(ctx->taskHandle)) {
         if (ctx->errorCallback) {
             char errBuff[2048];
             DAQmxGetExtendedErrorInfo(errBuff, sizeof(errBuff));
             ctx->errorCallback(errBuff);
         }
-        return -1;
+        return EXIT_FAILURE;
     }
-    return 0;
+    return EXIT_SUCCESS;
 }
 
-int DAQ_Stop(void* handle) {
-    AnalogContext* ctx = reinterpret_cast<AnalogContext*>(handle);
-    if (!ctx || !ctx->taskHandle) return -1;
+int DAQ_Stop(void *handle) {
+    const auto *ctx = static_cast<AnalogContext *>(handle);
+    if (!ctx || !ctx->taskHandle) {
+        printf("ERR: invalid taskHandle passed to DAQ_Stop\n");
+        return EXIT_FAILURE;
+    }
     DAQmxStopTask(ctx->taskHandle);
-    return 0;
+    return EXIT_SUCCESS;
 }
 
-void DAQ_Cleanup(void* handle) {
-    AnalogContext* ctx = reinterpret_cast<AnalogContext*>(handle);
+void DAQ_Cleanup(void *handle) {
+    const auto *ctx = static_cast<AnalogContext *>(handle);
     if (!ctx) return;
 
     if (ctx->taskHandle) {
@@ -211,8 +242,8 @@ void DAQ_Cleanup(void* handle) {
 }
 
 static int32 CVICALLBACK EveryNCallback(TaskHandle taskHandle, int32 everyNsamplesEventType,
-                                        uInt32 nSamples, void* callbackData) {
-    AnalogContext* ctx = reinterpret_cast<AnalogContext*>(callbackData);
+                                        uInt32 nSamples, void *callbackData) {
+    const auto *ctx = static_cast<AnalogContext *>(taskHandle);
     int32 error = 0;
     int32 read = 0;
 
@@ -220,8 +251,8 @@ static int32 CVICALLBACK EveryNCallback(TaskHandle taskHandle, int32 everyNsampl
     std::vector<float64> data(ctx->samplesPerCallback);
 
     error = DAQmxReadAnalogF64(taskHandle, ctx->samplesPerCallback, 10.0,
-                             DAQmx_Val_GroupByScanNumber, data.data(),
-                             ctx->samplesPerCallback, &read, nullptr);
+                               DAQmx_Val_GroupByScanNumber, data.data(),
+                               ctx->samplesPerCallback, &read, nullptr);
 
     if (DAQmxFailed(error)) {
         if (ctx->errorCallback) {
@@ -240,8 +271,8 @@ static int32 CVICALLBACK EveryNCallback(TaskHandle taskHandle, int32 everyNsampl
 }
 
 static int32 CVICALLBACK DoneCallback(TaskHandle taskHandle, int32 status,
-                                      void* callbackData) {
-    AnalogContext* ctx = reinterpret_cast<AnalogContext*>(callbackData);
+                                      void *callbackData) {
+    const auto *ctx = static_cast<AnalogContext *>(callbackData);
     if (status < 0 && ctx->errorCallback) {
         char errBuff[2048];
         DAQmxGetExtendedErrorInfo(errBuff, sizeof(errBuff));
@@ -251,8 +282,8 @@ static int32 CVICALLBACK DoneCallback(TaskHandle taskHandle, int32 status,
 }
 
 // -------------------- Unified Initialization/Cleanup --------------------
-DAQSystem initDAQSystem(const DigitalConfig& digiConfig,
-                        const AnalogConfig& analogConfig,
+DAQSystem initDAQSystem(const DigitalConfig &digiConfig,
+                        const AnalogConfig &analogConfig,
                         DataCallback dataCB,
                         ErrorCallback errorCB) {
     DAQSystem system;
@@ -289,7 +320,7 @@ DAQSystem initDAQSystem(const DigitalConfig& digiConfig,
     return system;
 }
 
-void cleanupDAQSystem(DAQSystem& system) {
+void cleanupDAQSystem(DAQSystem &system) {
     // Cleanup digital if initialized
     if (system.digitalTask) {
         cleanupDigitalOutputTask(system.digitalTask);

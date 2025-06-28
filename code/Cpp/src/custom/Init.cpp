@@ -10,7 +10,6 @@
 
 
 // #define BAUDRATE                        57600
-#define ESC_ASCII_VALUE                 0x1b                // ASCII value for the ESC key
 
 //user defined #define
 #define RECORD_CNT                          1000                 // Number of records to collect
@@ -114,6 +113,7 @@ void cleanUpAndExit() {
 }
 
 void DataHandler(double *data, uInt32 numSamples) {
+
     printf("Received %u samples. First: %.3f\n", numSamples, data[0]);
 }
 
@@ -203,6 +203,13 @@ int main(int argc, char *argv[]) {
                     state = ERR;
                     break;
                 }
+                if (setAllLEDs(daqSystem.digitalTask, LED_OFF) != EXIT_SUCCESS) {
+                    printf("Failed to set all LEDs off\n");
+                    state = ERR;
+                    break;
+                }
+
+
                 printf("=====================================\n");
                 state = INIT_LOADCELL;
                 break;
@@ -210,6 +217,7 @@ int main(int argc, char *argv[]) {
             case INIT_LOADCELL:
                 //TODO: Initialize load cell
                 printf("TODO: Initializing load cell...");
+                DAQ_Start(daqSystem.analogHandle);
                 state = READ_TRACKSTAR;
                 break;
 
@@ -231,34 +239,44 @@ int main(int argc, char *argv[]) {
                            retRecord.a, retRecord.e, retRecord.r
                     );
 
-                    state = SET_MOTOR;
+                    state = READ_DAQ;
                 } else {
                     printf("=====================================\n");
                     state = END;
                 }
+                break;
+            case READ_DAQ:
 
+
+                state = SET_MOTOR;
                 break;
             case SET_MOTOR:
                 if (retRecord.x < 30 && retRecord.x > -30) {
                     motor_destination[0] = dxl_goal_position[1];
+                    setLEDState(daqSystem.digitalTask, LED::LEFT_BASE, LED_ON);
                 } else {
                     motor_destination[0] = dxl_goal_position[0];
+                    setLEDState(daqSystem.digitalTask, LED::LEFT_BASE, LED_OFF);
                 }
                 if (retRecord.y < 30 && retRecord.y > -30) {
                     motor_destination[1] = dxl_goal_position[1];
+                    setLEDState(daqSystem.digitalTask, LED::CENTER_BASE, LED_ON);
                 } else {
                     motor_destination[1] = dxl_goal_position[0];
+                    setLEDState(daqSystem.digitalTask, LED::CENTER_BASE, LED_OFF);
                 }
                 if (retRecord.z < 30 && retRecord.z > -30) {
                     motor_destination[2] = dxl_goal_position[1];
+                    setLEDState(daqSystem.digitalTask, LED::RIGHT_BASE, LED_ON);
                 } else {
                     motor_destination[2] = dxl_goal_position[0];
+                    setLEDState(daqSystem.digitalTask, LED::RIGHT_BASE, LED_OFF);
                 }
-            // printf("[ID:%4ld]", data_count);
-            // for (int i: motor_destination) {
-            //     printf("%d ", i);
-            // }
-            // printf("\n");
+                // printf("[ID:%4ld]", data_count);
+                // for (int i: motor_destination) {
+                //     printf("%d ", i);
+                // }
+                // printf("\n");
                 state = MOVE_MOTORS;
                 break;
             case MOVE_MOTORS:
@@ -344,11 +362,12 @@ int main(int argc, char *argv[]) {
                 for (auto motor: vMotors) {
                     motor.disableTorque(packetHandler, portHandler);
                 }
-            // vMotors.clear();
+                // vMotors.clear();
                 portHandler->closePort();
                 state = CLEANUP_DAQ;
                 break;
             case CLEANUP_DAQ:
+                DAQ_Stop(daqSystem.analogHandle);
                 cleanupDAQSystem(daqSystem);
                 state = CLEANUP_TRACKSTAR;
                 break;
