@@ -113,8 +113,26 @@ void cleanUpAndExit() {
 }
 
 void DataHandler(double *data, uInt32 numSamples) {
+    try {
+        if (!data || numSamples == 0) {
+            printf("WARNING: Invalid data or sample count in DataHandler!\n");
+            return;
+        }
+        // printf("Test\n");
+        // printf("Received %u samples. First: %.3f\n", numSamples, data[0]);
+        // if (data == nullptr) {
+        //     printf("No data\n");
+        //     return;
+        // }
+        std::vector<double> vData(data, data + numSamples);
+        printf("DAQ - Sample Count: %4u - Received Data[0] - %8.5f\n",
+               numSamples,
+               data[0]);
+    } catch (std::exception &e) {
+        printf("Error: %s\n", e.what());
 
-    printf("Received %u samples. First: %.3f\n", numSamples, data[0]);
+        state = ERR;
+    }
 }
 
 void ErrorHandler(const char *errorMessage) {
@@ -149,9 +167,34 @@ int main(int argc, char *argv[]) {
             case START:
                 dxl_comm_result = COMM_SUCCESS;
                 groupSyncWrite.clearParam();
-                state = INIT_MOTORS;
+                state = INIT_DAQ;
                 printf("\n=====================================\n");
                 break;
+            case INIT_DAQ: {
+                printf("=====================================\n");
+                printf("Initializing the daq...\n");
+                DigitalConfig digiConfig = {"Dev1", "PFI0:2"};
+                AnalogConfig analogConfig = {
+                    "Dev1", "ai0",
+                    0.0, 10.0,
+                    10000.0,
+                    1000
+                };
+                daqSystem = initDAQSystem(digiConfig, analogConfig, DataHandler, ErrorHandler);
+                if (!daqSystem.initialized) {
+                    printf("Failed to initialize DAQ system\n");
+                    state = ERR;
+                    break;
+                }
+                if (setAllLEDs(daqSystem.digitalTask, LED_OFF) != EXIT_SUCCESS) {
+                    printf("Failed to set all LEDs off\n");
+                    state = ERR;
+                    break;
+                }
+                printf("=====================================\n");
+                state = INIT_MOTORS;
+                break;
+            }
             case INIT_MOTORS:
                 printf("Initializing motors...");
                 printf("\n=====================================\n");
@@ -185,39 +228,13 @@ int main(int argc, char *argv[]) {
                 break;
             case INIT_TRACKSTAR:
                 initTxRx();
-                state = INIT_DAQ;
-                break;
-            case INIT_DAQ: {
-                printf("=====================================\n");
-                printf("Initializing the daq...");
-                DigitalConfig digiConfig = {"Dev1", "PFI0:2"};
-                AnalogConfig analogConfig = {
-                    "Dev1", "ai0",
-                    0.0, 10.0,
-                    10000.0,
-                    1000
-                };
-                daqSystem = initDAQSystem(digiConfig, analogConfig, DataHandler, ErrorHandler);
-                if (!daqSystem.initialized) {
-                    printf("Failed to initialize DAQ system\n");
-                    state = ERR;
-                    break;
-                }
-                if (setAllLEDs(daqSystem.digitalTask, LED_OFF) != EXIT_SUCCESS) {
-                    printf("Failed to set all LEDs off\n");
-                    state = ERR;
-                    break;
-                }
-
-
-                printf("=====================================\n");
                 state = INIT_LOADCELL;
                 break;
-            }
+
             case INIT_LOADCELL:
                 //TODO: Initialize load cell
-                printf("TODO: Initializing load cell...");
-                DAQ_Start(daqSystem.analogHandle);
+                printf("TODO: Initializing load cell...\n");
+                DAQStart(daqSystem.analogHandle);
                 state = READ_TRACKSTAR;
                 break;
 
@@ -232,7 +249,7 @@ int main(int argc, char *argv[]) {
                 if (data_count < RECORD_CNT) {
                     retRecord = readATI(SENSOR_ID_LEFT);
                     data_count++;
-                    printf("%4ld [%d] %8.3f %8.3f %8.3f: %8.2f %8.2f %8.2f\n",
+                    printf("TS: %4ld [%d] %8.3f %8.3f %8.3f: %8.2f %8.2f %8.2f\n",
                            data_count,
                            SENSOR_ID_LEFT,
                            retRecord.x, retRecord.y, retRecord.z,
@@ -246,8 +263,6 @@ int main(int argc, char *argv[]) {
                 }
                 break;
             case READ_DAQ:
-
-
                 state = SET_MOTOR;
                 break;
             case SET_MOTOR:
@@ -272,11 +287,11 @@ int main(int argc, char *argv[]) {
                     motor_destination[2] = dxl_goal_position[0];
                     setLEDState(daqSystem.digitalTask, LED::RIGHT_BASE, LED_OFF);
                 }
-                // printf("[ID:%4ld]", data_count);
-                // for (int i: motor_destination) {
-                //     printf("%d ", i);
-                // }
-                // printf("\n");
+            // printf("[ID:%4ld]", data_count);
+            // for (int i: motor_destination) {
+            //     printf("%d ", i);
+            // }
+            // printf("\n");
                 state = MOVE_MOTORS;
                 break;
             case MOVE_MOTORS:
@@ -354,23 +369,25 @@ int main(int argc, char *argv[]) {
                 state = END;
                 break;
             case END:
+                state = CLEANUP_DAQ;
+                break;
+            case CLEANUP_DAQ:
+                setAllLEDs(daqSystem.digitalTask, LED_OFF);
+                DAQStop(daqSystem.analogHandle);
+                cleanupDAQSystem(daqSystem);
+
                 state = CLEANUP_MOTORS;
                 break;
-
             case CLEANUP_MOTORS:
                 groupSyncWrite.clearParam();
                 for (auto motor: vMotors) {
                     motor.disableTorque(packetHandler, portHandler);
                 }
-                // vMotors.clear();
+            // vMotors.clear();
                 portHandler->closePort();
-                state = CLEANUP_DAQ;
-                break;
-            case CLEANUP_DAQ:
-                DAQ_Stop(daqSystem.analogHandle);
-                cleanupDAQSystem(daqSystem);
                 state = CLEANUP_TRACKSTAR;
                 break;
+
             case CLEANUP_TRACKSTAR:
                 cleanUpAndExit();
                 printf("\n=====================================\n");

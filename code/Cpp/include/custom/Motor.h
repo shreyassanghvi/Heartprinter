@@ -13,8 +13,7 @@
 #define PWM_CONTROL_MODE                16                  // Mode is unavailable in Protocol 1.0 Reset
 #define ADDR_OPERATING_MODE             11                  // Control table address is different in Dynamixel model
 #define ADDR_LED                        65                  // Control table address is different in Dynamixel model
-#define LED_ON                          1                   // Value for LED on
-#define LED_OFF                         0                   // Value for LED off
+
 // #define for various definitions for the DYNAMIXEL
 #define PROTOCOL_VERSION                2.0                 // See which protocol version is used in the DYNAMIXEL
 #define DEVICENAME                      "COM4"      // ex) Windows: "COM1"   Linux: "/dev/ttyUSB0" Mac: "/dev/tty.usbserial-*"

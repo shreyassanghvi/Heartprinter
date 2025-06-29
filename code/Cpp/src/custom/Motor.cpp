@@ -5,7 +5,9 @@
 
 #include <cstdlib>
 #include <unistd.h>
-
+// #define for LED states
+#define LED_ON                          1                   // Value for LED on
+#define LED_OFF                         0                   // Value for LED off
 /**
  * @brief Get the motor ID.
  *

@@ -6,6 +6,7 @@
 
 // Macro for DAQmx error handling
 #define DAQmxErrChk(functionCall) if( DAQmxFailed(error=(functionCall)) ) goto Error; else
+
 //static function declaration
 static int32 CVICALLBACK EveryNCallback(TaskHandle taskHandle, int32 everyNsamplesEventType,
                                         uInt32 nSamples, void *callbackData);
@@ -29,7 +30,7 @@ int WriteDigitalState(TaskHandle taskHandle, uInt32 state) {
         &written,
         nullptr
     ));
-    return 0;
+    return EXIT_SUCCESS;
 
 Error:
     if (DAQmxFailed(error)) {
@@ -37,7 +38,7 @@ Error:
         DAQmxGetExtendedErrorInfo(errBuff, 2048);
         printf("Digital Write Error: %s\n", errBuff);
     }
-    return -1;
+    return EXIT_FAILURE;
 }
 
 int ReadDigitalState(TaskHandle taskHandle) {
@@ -71,6 +72,7 @@ int setLEDState(TaskHandle taskHandle, LED led, int state) {
     if (currentState == static_cast<uInt32>(-1)) return EXIT_FAILURE;
     if (state != LED_ON && state != LED_OFF) {
         printf("ERR: invalid LED state passed to setLEDState");
+        return EXIT_FAILURE;
     }
     if (state == LED_ON) {
         currentState |= (1 << static_cast<int>(led));
@@ -108,6 +110,7 @@ int setLEDState(TaskHandle taskHandle, LED led, int state) {
 int setAllLEDs(const TaskHandle taskHandle, const int state) {
     if (state != LED_ON && state != LED_OFF) {
         printf("ERR: invalid LED state passed to setAllLEDs");
+        return EXIT_FAILURE;
     }
     if (state == LED_ON) {
         return WriteDigitalState(taskHandle, 0x7);
@@ -202,7 +205,7 @@ Error:
     return nullptr;
 }
 
-int DAQ_Start(void *handle) {
+int DAQStart(void *handle) {
     const auto *ctx = static_cast<AnalogContext *>(handle);
     if (!ctx || !ctx->taskHandle) {
         printf("ERR: incorrect handle passed to DAQ_Start\n");
@@ -220,7 +223,7 @@ int DAQ_Start(void *handle) {
     return EXIT_SUCCESS;
 }
 
-int DAQ_Stop(void *handle) {
+int DAQStop(void *handle) {
     const auto *ctx = static_cast<AnalogContext *>(handle);
     if (!ctx || !ctx->taskHandle) {
         printf("ERR: invalid taskHandle passed to DAQ_Stop\n");
@@ -230,7 +233,7 @@ int DAQ_Stop(void *handle) {
     return EXIT_SUCCESS;
 }
 
-void DAQ_Cleanup(void *handle) {
+void DAQCleanup(void *handle) {
     const auto *ctx = static_cast<AnalogContext *>(handle);
     if (!ctx) return;
 
@@ -243,7 +246,8 @@ void DAQ_Cleanup(void *handle) {
 
 static int32 CVICALLBACK EveryNCallback(TaskHandle taskHandle, int32 everyNsamplesEventType,
                                         uInt32 nSamples, void *callbackData) {
-    const auto *ctx = static_cast<AnalogContext *>(taskHandle);
+    const auto *ctx = static_cast<AnalogContext *>(callbackData);
+
     int32 error = 0;
     int32 read = 0;
 
@@ -263,7 +267,7 @@ static int32 CVICALLBACK EveryNCallback(TaskHandle taskHandle, int32 everyNsampl
         return error;
     }
 
-    if (read > 0 && ctx->dataCallback) {
+    if (read > 0 && ctx->dataCallback && static_cast<uInt32>(read) <= ctx->samplesPerCallback) {
         ctx->dataCallback(data.data(), static_cast<uInt32>(read));
     }
 
@@ -312,7 +316,7 @@ DAQSystem initDAQSystem(const DigitalConfig &digiConfig,
     // Cleanup if partial initialization occurred
     if (!system.initialized) {
         if (digitalOK) cleanupDigitalOutputTask(system.digitalTask);
-        if (analogOK) DAQ_Cleanup(system.analogHandle);
+        if (analogOK) DAQCleanup(system.analogHandle);
         system.digitalTask = nullptr;
         system.analogHandle = nullptr;
     }
@@ -329,8 +333,8 @@ void cleanupDAQSystem(DAQSystem &system) {
 
     // Cleanup analog if initialized
     if (system.analogHandle) {
-        DAQ_Stop(system.analogHandle);
-        DAQ_Cleanup(system.analogHandle);
+        DAQStop(system.analogHandle);
+        DAQCleanup(system.analogHandle);
         system.analogHandle = nullptr;
     }
 

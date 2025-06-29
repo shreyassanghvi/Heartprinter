@@ -56,9 +56,10 @@ int setAllLEDs(TaskHandle taskHandle, int state);
 // int setAllLEDsOff(TaskHandle taskHandle);
 
 // Analog Acquisition Control
-int DAQ_Start(void *handle);
+int DAQStart(void *handle);
 
-int DAQ_Stop(void *handle);
+int DAQStop(void *handle);
+
 
 // Unified Initialization and Cleanup
 DAQSystem initDAQSystem(const DigitalConfig &digiConfig,
