@@ -2,7 +2,7 @@
 #define MOTOR_H
 
 #include "../Dynamixel_SDK/dynamixel_sdk.h"
-
+#include "log.h"
 
 #define TORQUE_ENABLE                   1                   // Value for enabling the torque
 #define TORQUE_DISABLE                  0                   // Value for disabling the torque
@@ -17,6 +17,8 @@
 // #define for various definitions for the DYNAMIXEL
 #define PROTOCOL_VERSION                2.0                 // See which protocol version is used in the DYNAMIXEL
 #define DEVICENAME                      "COM4"      // ex) Windows: "COM1"   Linux: "/dev/ttyUSB0" Mac: "/dev/tty.usbserial-*"
+
+
 
 #define BAUDRATE                        57600                // Baudrate of Dynamixel
 #define X_SERIES
@@ -93,9 +95,7 @@ public:
 
     int disableTorque(dynamixel::PacketHandler *packetHandler, dynamixel::PortHandler *portHandler) const;
 
-    bool addGroupSyncRead(dynamixel::GroupSyncRead *groupSyncRead) const;
-
-    bool addGroupSyncWrite(dynamixel::GroupSyncWrite *groupSyncWrite, int goalPosition) const;
+    bool setMotorDestination(dynamixel::GroupSyncWrite *groupSyncWrite, double goalPosition) const;
 
     uint32_t checkAndGetPresentPosition(dynamixel::GroupSyncRead *groupSyncRead);
 
@@ -107,9 +107,13 @@ public:
     void ledOperationMode(dynamixel::PacketHandler *packetHandler, dynamixel::PortHandler *portHandler,
                           int ledStatus) const;
 
+    double mmToDynamixelUnits(double mm) const;
+
 private:
     // Add private members as needed
     DynamixelMotor motor{};
+
+    double pulley_diameter_mm = 30.0;
 };
 
 #endif //MOTOR_H

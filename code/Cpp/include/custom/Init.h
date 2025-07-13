@@ -25,7 +25,7 @@
 #include "../Dynamixel_SDK/dynamixel_sdk.h"
 
 // userdefined headers
-
+#include "log.h"
 
 #include "Motor.h"
 

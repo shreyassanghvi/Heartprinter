@@ -2,6 +2,9 @@
 // Created by shreyas on 12/19/24.
 //
 #include "../../include/custom/Init.h"
+
+#include <unistd.h>
+
 #include "../../include/Trackstar/ATC3DG.h"
 
 // #define for various definitions for the DYNAMIXEL
@@ -162,12 +165,14 @@ int main(int argc, char *argv[]) {
     retRecord.y = 0;
     retRecord.z = 0;
     //TODO: check and fix state machine
+    char buf[BUFSIZ];
     while (true) {
         switch (state) {
             case START:
                 dxl_comm_result = COMM_SUCCESS;
                 groupSyncWrite.clearParam();
                 state = INIT_DAQ;
+                setLogLevel(LOG_FATAL);
                 printf("\n=====================================\n");
                 break;
             case INIT_DAQ: {
@@ -175,19 +180,28 @@ int main(int argc, char *argv[]) {
                 printf("Initializing the daq...\n");
                 DigitalConfig digiConfig = {"Dev1", "PFI0:2"};
                 AnalogConfig analogConfig = {
-                    "Dev1", "ai0",
+                    "Dev1", "ai0:2",
                     0.0, 10.0,
                     10000.0,
                     1000
                 };
                 daqSystem = initDAQSystem(digiConfig, analogConfig, DataHandler, ErrorHandler);
                 if (!daqSystem.initialized) {
-                    printf("Failed to initialize DAQ system\n");
+                    sprintf(buf, "Failed to initialize DAQ system\n");
+                    printLog(LOG_ERROR, buf);
                     state = ERR;
                     break;
                 }
+                if (setAllLEDs(daqSystem.digitalTask, LED_ON) != EXIT_SUCCESS) {
+                    sprintf(buf, "Failed to set all LEDs off\n");
+                    printLog(LOG_ERROR, buf);
+                    state = ERR;
+                    break;
+                }
+                sleep(1);
                 if (setAllLEDs(daqSystem.digitalTask, LED_OFF) != EXIT_SUCCESS) {
-                    printf("Failed to set all LEDs off\n");
+                    sprintf(buf, "Failed to set all LEDs off\n");
+                    printLog(LOG_ERROR, buf);
                     state = ERR;
                     break;
                 }
@@ -212,7 +226,7 @@ int main(int argc, char *argv[]) {
                         ERR_FLG = 1;
                         break;
                     }
-                    if (vMotors.back().addGroupSyncWrite(&groupSyncWrite, DXL_MINIMUM_POSITION_VALUE) != true) {
+                    if (vMotors.back().setMotorDestination(&groupSyncWrite, DXL_MINIMUM_POSITION_VALUE) != true) {
                         state = ERR;
                         ERR_FLG = 1;
                         break;
@@ -234,69 +248,95 @@ int main(int argc, char *argv[]) {
             case INIT_LOADCELL:
                 //TODO: Initialize load cell
                 printf("TODO: Initializing load cell...\n");
+                printLog(LOG_WARN, "TODO: Initializing load cell...\n");
                 DAQStart(daqSystem.analogHandle);
                 state = READ_TRACKSTAR;
                 break;
 
             case READ_TRACKSTAR:
                 if (data_count == 0) {
-                    printf("=====================================\n");
-                    printf("Collect %4d Data records from Sensors\n",RECORD_CNT);
-                    printf("=====================================\n");
-                    printf("Note: Metric mode was selected, position is in mm.\n");
-                    printf("\t-----------\n");
+                    printLog(LOG_INFO, "=====================================\n");
+                    sprintf(buf, "Collect %4d Data records from Sensors\n",RECORD_CNT);
+                    printLog(LOG_INFO, buf);
+                    printLog(LOG_INFO, "=====================================\n");
+                    printLog(LOG_INFO, "Note: Metric mode was selected, position is in mm.\n");
+                    printLog(LOG_INFO, "\t-----------\n");
                 }
                 if (data_count < RECORD_CNT) {
                     retRecord = readATI(SENSOR_ID_LEFT);
                     data_count++;
-                    printf("TS: %4ld [%d] %8.3f %8.3f %8.3f: %8.2f %8.2f %8.2f\n",
-                           data_count,
-                           SENSOR_ID_LEFT,
-                           retRecord.x, retRecord.y, retRecord.z,
-                           retRecord.a, retRecord.e, retRecord.r
+                    sprintf(buf, "TS: %4ld [%d] %8.3f %8.3f %8.3f: %8.2f %8.2f %8.2f\n",
+                            data_count,
+                            SENSOR_ID_LEFT,
+                            retRecord.x, retRecord.y, retRecord.z,
+                            retRecord.a, retRecord.e, retRecord.r
                     );
-
+                    printLog(LOG_INFO, buf);
                     state = READ_DAQ;
                 } else {
-                    printf("=====================================\n");
+                    printLog(LOG_INFO, "=====================================\n");
                     state = END;
                 }
                 break;
             case READ_DAQ:
                 state = SET_MOTOR;
                 break;
-            case SET_MOTOR:
-                if (retRecord.x < 30 && retRecord.x > -30) {
-                    motor_destination[0] = dxl_goal_position[1];
-                    setLEDState(daqSystem.digitalTask, LED::LEFT_BASE, LED_ON);
+            case SET_MOTOR: {
+                static const double DEADBAND = 3.0;
+                static const double REF_X = 0.0;
+                static const double REF_Y = 0.0;
+                static const double REF_Z = 0.0;
+
+                double dx = retRecord.x - REF_X;
+                double dy = retRecord.y - REF_Y;
+                double dz = retRecord.z - REF_Z;
+
+                // X axis (motor 0): normal logic
+                if (dx > DEADBAND) {
+                    motor_destination[0] = dxl_goal_position[1]; // forward
+                    // setLEDState(daqSystem.digitalTask, LED::LEFT_BASE, LED_ON);
+                } else if (dx < -DEADBAND) {
+                    motor_destination[0] = dxl_goal_position[0]; // backward
+                    // setLEDState(daqSystem.digitalTask, LED::LEFT_BASE, LED_ON);
                 } else {
-                    motor_destination[0] = dxl_goal_position[0];
-                    setLEDState(daqSystem.digitalTask, LED::LEFT_BASE, LED_OFF);
+                    motor_destination[0] = (dxl_goal_position[0] + dxl_goal_position[1]) / 2; // neutral
+                    // setLEDState(daqSystem.digitalTask, LED::LEFT_BASE, LED_OFF);
                 }
-                if (retRecord.y < 30 && retRecord.y > -30) {
-                    motor_destination[1] = dxl_goal_position[1];
+
+                // Y axis (motor 1): INVERTED logic
+                if (dy > DEADBAND) {
+                    motor_destination[1] = dxl_goal_position[0]; // backward (inverted)
+                    setLEDState(daqSystem.digitalTask, LED::CENTER_BASE, LED_ON);
+                } else if (dy < -DEADBAND) {
+                    motor_destination[1] = dxl_goal_position[1]; // forward (inverted)
                     setLEDState(daqSystem.digitalTask, LED::CENTER_BASE, LED_ON);
                 } else {
-                    motor_destination[1] = dxl_goal_position[0];
+                    motor_destination[1] = (dxl_goal_position[0] + dxl_goal_position[1]) / 2; // neutral
                     setLEDState(daqSystem.digitalTask, LED::CENTER_BASE, LED_OFF);
                 }
-                if (retRecord.z < 30 && retRecord.z > -30) {
-                    motor_destination[2] = dxl_goal_position[1];
+
+                // Z axis (motor 2): normal logic
+                if (dz > DEADBAND) {
+                    motor_destination[2] = dxl_goal_position[1]; // forward
+                    setLEDState(daqSystem.digitalTask, LED::RIGHT_BASE, LED_ON);
+                } else if (dz < -DEADBAND) {
+                    motor_destination[2] = dxl_goal_position[0]; // backward
                     setLEDState(daqSystem.digitalTask, LED::RIGHT_BASE, LED_ON);
                 } else {
-                    motor_destination[2] = dxl_goal_position[0];
+                    motor_destination[2] = (dxl_goal_position[0] + dxl_goal_position[1]) / 2; // neutral
                     setLEDState(daqSystem.digitalTask, LED::RIGHT_BASE, LED_OFF);
                 }
-            // printf("[ID:%4ld]", data_count);
-            // for (int i: motor_destination) {
-            //     printf("%d ", i);
-            // }
-            // printf("\n");
+
+                printf("dx: %.2f, dy: %.2f, dz: %.2f | Dest: [%d, %d, %d]\n",
+                       dx, dy, dz, motor_destination[0], motor_destination[1], motor_destination[2]);
+
                 state = MOVE_MOTORS;
                 break;
+            }
+
             case MOVE_MOTORS:
                 for (int j = 0; j < MOTOR_CNT; j++) {
-                    if (vMotors[j].addGroupSyncWrite(&groupSyncWrite, motor_destination[j]) != true) {
+                    if (vMotors[j].setMotorDestination(&groupSyncWrite, motor_destination[j]) != true) {
                         state = ERR;
                         ERR_FLG = 1;
                         break;

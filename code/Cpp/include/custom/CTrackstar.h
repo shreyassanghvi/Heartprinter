@@ -5,6 +5,7 @@
 #include "conio.h"
 #include "../Trackstar/ATC3DG.h"
 #include "../Trackstar/StdAfx.h"
+#include "LOG.h"
 
 class CSystem {
 public:

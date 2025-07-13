@@ -90,8 +90,9 @@ void errorHandler(int error, int lineNum) {
         //	terminating newline character. If the user needs the strings to be
         //	displayed on succeeding lines then a newline "\n" needs to be added.
         //
-        printf("%s %d\n", buffer, lineNum);
-
+        // printf("%s %d\n", buffer, lineNum);
+        sprintf(buffer, "%s %d\n", buffer, lineNum);
+        printLog(LOG_ERROR, buffer);
         currentError = nextError;
     } while (currentError != BIRD_ERROR_SUCCESS);
 
@@ -222,7 +223,7 @@ void initTxRx() {
     // AGC_MODE
     //
     auto SYS_AGC_MODE = GET_SYSTEM_PARAMETER<int>(AGC_MODE);
-    printf("AGC_MODE:\t\t\t\t%s\n", SYS_AGC_MODE==1?"SENSOR_AGC_ONLY":"TRANSMITTER_AND_SENSOR_AGC");
+    printf("AGC_MODE:\t\t\t\t%s\n", SYS_AGC_MODE == 1 ? "SENSOR_AGC_ONLY" : "TRANSMITTER_AND_SENSOR_AGC");
     //
     // MEASUREMENT_RATE
     //
@@ -237,7 +238,7 @@ void initTxRx() {
     // METRIC
     //
     auto SYS_METRIC = GET_SYSTEM_PARAMETER<BOOL>(METRIC);
-    printf("METRIC:\t\t\t\t\t%s\n", SYS_METRIC==1?"TRUE":"FALSE");
+    printf("METRIC:\t\t\t\t\t%s\n", SYS_METRIC == 1 ? "TRUE" : "FALSE");
 
     //////////////////////////////////////////////////////////////////////////////
     //////////////////////////////////////////////////////////////////////////////
@@ -284,7 +285,6 @@ void initTxRx() {
     }
 
 
-
     //////////////////////////////////////////////////////////////////////////////
     //////////////////////////////////////////////////////////////////////////////
     //////////////////////////////////////////////////////////////////////////////
@@ -300,7 +300,6 @@ void initTxRx() {
     printf("\nGet Sensor Parameters");
     printf("\n==========================================\n");
     for (sensorID = 0; sensorID < ATC3DG.m_config.numberSensors; sensorID++) {
-
         printf("Sensor ID: %d\n", sensorID);
         //
         // DATA_FORMAT
@@ -423,7 +422,6 @@ void initTxRx() {
     //
     auto xyzReferenceFrame = GET_TRANSMITTER_PARAMETER<BOOL>(transmitterID, XYZ_REFERENCE_FRAME);
     printf("XYZ_REFERENCE_FRAME: %d\n", xyzReferenceFrame);
-
 }
 
 DOUBLE_POSITION_ANGLES_RECORD readATI(short sensID) {

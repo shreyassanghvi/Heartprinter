@@ -5,7 +5,7 @@
 #include <cstdlib>
 #include <Windows.h>
 #include "../../include/NIDAQmx/NIDAQmx.h"
-
+#include "log.h"
 
 // -------------------- Type Definitions --------------------
 #define LED_ON 1
