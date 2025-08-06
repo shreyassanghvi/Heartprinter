@@ -26,8 +26,6 @@ add_compile_options(-O2 -O3 -fPIC -pthread -Wall -m64 -g -Wmaybe-uninitialized)
 
 # === Include Directories ===
 include_directories(
-        ${DIR_DXL}/include/dynamixel_sdk
-        ${DIR_DXL}/include/custom
         "C:/Program Files (x86)/Northern Digital Inc/3D Guidance driveBAY/3DG API Developer/3DG API/"
         ${CMAKE_CURRENT_SOURCE_DIR}/c++/include
         ${CMAKE_CURRENT_SOURCE_DIR}/c++/include/dynamixel_sdk
@@ -55,18 +53,23 @@ target_include_directories(dynamixel_sdk_static PRIVATE
 if(WIN32)
     target_link_libraries(dynamixel_sdk ws2_32 winmm)
     target_link_libraries(dynamixel_sdk_static ws2_32 winmm)
-    set_target_properties(dynamixel_sdk PROPERTIES OUTPUT_NAME "dxl_x64_cpp")
     set_target_properties(dynamixel_sdk_static PROPERTIES OUTPUT_NAME "dxl_x64_cpp_static")
 
     # Import the ATC3DG64 library
     add_library(ATC3DG64 SHARED IMPORTED GLOBAL)
     set_target_properties(ATC3DG64 PROPERTIES
             IMPORTED_LOCATION "C:/Program Files (x86)/Northern Digital Inc/3D Guidance driveBAY/3DG API Developer/3DG API/ATC3DG64.dll"
-            IMPORTED_IMPLIB   "C:/Program Files (x86)/Northern Digital Inc/3D Guidance driveBAY/3DG API Developer/3DG API/ATC3DG64.lib"
+            IMPORTED_IMPLIB  "C:/Program Files (x86)/Northern Digital Inc/3D Guidance driveBAY/3DG API Developer/3DG API/ATC3DG64.lib"
             INTERFACE_INCLUDE_DIRECTORIES "C:/Program Files (x86)/Northern Digital Inc/3D Guidance driveBAY/3DG API Developer/3DG API/"
     )
+
+    add_library(NIDAQmx SHARED IMPORTED GLOBAL)
+    set_target_properties(NIDAQmx PROPERTIES
+#            IMPORTED_LOCATION "C:/Program Files (x86)/Northern Digital Inc/3D Guidance driveBAY/3DG API Developer/3DG API/ATC3DG64.dll"
+            IMPORTED_IMPLIB "C:/Program Files (x86)/National Instruments/Shared/ExternalCompilerSupport/C/lib64/msvc/NIDAQmx.lib"
+            INTERFACE_INCLUDE_DIRECTORIES "C:/Program Files (x86)/National Instruments/Shared/ExternalCompilerSupport/C/lib64/msvc/"
+    )
 else()
-    target_link_libraries(dynamixel_sdk rt)
     target_link_libraries(dynamixel_sdk_static rt)
 endif()
 
@@ -75,6 +78,8 @@ add_executable(${PROJECT_NAME} ${SOURCES})
 
 if(WIN32)
     target_link_libraries(${PROJECT_NAME}
+            NIDAQmx
+            NIDAQmx
             dynamixel_sdk
             ATC3DG64
     )
@@ -94,6 +99,12 @@ if(WIN32)
             $<TARGET_FILE_DIR:${PROJECT_NAME}>
             COMMENT "Copying ATC3DG64.dll to output directory"
     )
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "C:/Program Files (x86)/National Instruments/Shared/ExternalCompilerSupport/C/lib64/msvc/NIDAQmx.lib"
+            $<TARGET_FILE_DIR:${PROJECT_NAME}>
+            COMMENT "Copying NIDAQmx.lib to output directory"
+    )
 endif()
 
 # === Installation Rules for DynamixelSDK ===
@@ -103,9 +114,12 @@ install(TARGETS dynamixel_sdk dynamixel_sdk_static
         RUNTIME DESTINATION bin
 )
 
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/dynamixel_sdk/ DESTINATION include
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/Dynamixel_SDK/ DESTINATION include
         FILES_MATCHING PATTERN "*.h"
 )
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/custom/ DESTINATION include
+        FILES_MATCHING PATTERN "*.h"
+)
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/NIDAQmx/ DESTINATION include
         FILES_MATCHING PATTERN "*.h"
 )

@@ -5,7 +5,10 @@
 
 #include <cstdlib>
 #include <unistd.h>
-
+#include <cmath>
+// #define for LED states
+#define LED_ON                          1                   // Value for LED on
+#define LED_OFF                         0                   // Value for LED off
 /**
  * @brief Get the motor ID.
  *
@@ -14,15 +17,6 @@
 int Motor::getMotorID() const { return motor.DXL_ID; }
 
 
-/**
- * @brief Constructs a Motor object with specified ID and motor type.
- *
- * Sets the motor's control table addresses, data lengths, and position limits based on the given motor type.
- * Supported motor types are "X_SERIES", "MX_SERIES", "PRO_SERIES", "P_SERIES", and "PRO_A_SERIES".
- *
- * @param id The ID of the motor.
- * @param motorType A string representing the type of the motor. Valid values are "X_SERIES", "MX_SERIES", "PRO_SERIES", "P_SERIES", and "PRO_A_SERIES".
- */
 Motor::Motor(const int id) {
     this->motor.DXL_ID = id;
 }
@@ -96,19 +90,6 @@ int Motor::disableTorque(dynamixel::PacketHandler *packetHandler, dynamixel::Por
     return dxl_error;
 }
 
-/**
- * @brief Add this Motor object to the GroupSyncRead object.
- * @param groupSyncRead The GroupSyncRead object to add this Motor object to.
- * @return True if the Motor object is successfully added to the GroupSyncRead object.
- */
-bool Motor::addGroupSyncRead(dynamixel::GroupSyncRead *groupSyncRead) const {
-    //TODO: add parameter check
-    if (groupSyncRead == nullptr || groupSyncRead->addParam(this->getMotorID()) == false) {
-        fprintf(stderr, "[ID:%03d] groupSyncRead addparam failed", this->getMotorID());
-        return false;
-    }
-    return true;
-}
 
 /**
  * @brief Add this Motor object to the GroupSyncWrite object.
@@ -117,11 +98,13 @@ bool Motor::addGroupSyncRead(dynamixel::GroupSyncRead *groupSyncRead) const {
  * @param goalPosition The goal position to write to the motor.
  * @return True if the Motor object is successfully added to the GroupSyncWrite object.
  */
-bool Motor::addGroupSyncWrite(dynamixel::GroupSyncWrite *groupSyncWrite, int goalPosition) const {
+bool Motor::setMotorDestination(dynamixel::GroupSyncWrite *groupSyncWrite, double goalPosition) const {
     //TODO: add parameter check
     // Allocate goal position value into byte array
     if (groupSyncWrite == nullptr) {
-        fprintf(stderr, "[ID:%03d] groupSyncWrite addparam failed: null", this->getMotorID());
+        char buffer[1024];
+        sprintf(buffer, "[ID:%03d] groupSyncWrite addparam failed: null", this->getMotorID());
+        printLog(LOG_ERROR, buffer);
         return false;
     }
     uint8_t param_goal_position[4];
@@ -130,7 +113,9 @@ bool Motor::addGroupSyncWrite(dynamixel::GroupSyncWrite *groupSyncWrite, int goa
     param_goal_position[2] = DXL_LOBYTE(DXL_HIWORD(goalPosition));
     param_goal_position[3] = DXL_HIBYTE(DXL_HIWORD(goalPosition));
     if (groupSyncWrite->addParam(this->getMotorID(), param_goal_position) == false) {
-        fprintf(stderr, "[ID:%03d] groupSyncWrite addparam failed", this->getMotorID());
+        char buffer[1024];
+        sprintf(buffer, "[ID:%03d] groupSyncWrite addparam failed", this->getMotorID());
+        printLog(LOG_ERROR, buffer);
         return false;
     }
     return true;
@@ -138,10 +123,11 @@ bool Motor::addGroupSyncWrite(dynamixel::GroupSyncWrite *groupSyncWrite, int goa
 
 uint32_t Motor::checkAndGetPresentPosition(dynamixel::GroupSyncRead *groupSyncRead) {
     //TODO: add parameter check
-
     if (groupSyncRead->
         isAvailable(this->getMotorID(), ADDR_PRESENT_POSITION, LEN_PRESENT_POSITION) != true) {
-        fprintf(stderr, "[ID:%03d] groupSyncRead getdata failed", this->getMotorID());
+        char buffer[1024];
+        sprintf(buffer, "[ID:%03d] groupSyncRead getdata failed", this->getMotorID());
+        printLog(LOG_ERROR, buffer);
         return EXIT_FAILURE;
     }
     this->motor.DXL_PRESENT_POSITION_VALUE = groupSyncRead->getData(this->getMotorID(), ADDR_PRESENT_POSITION,
@@ -157,7 +143,8 @@ int Motor::setMotorOperationMode(dynamixel::PacketHandler *packetHandler, dynami
                                  int operationMode) const {
     int dxl_comm_result = COMM_TX_FAIL; // Communication result
     uint8_t dxl_error = 0; // Dynamixel error
-    if (operationMode != EXTENDED_POSITION_CONTROL_MODE && operationMode != VELOCITY_CONTROL_MODE && operationMode != PWM_CONTROL_MODE) {
+    if (operationMode != EXTENDED_POSITION_CONTROL_MODE && operationMode != VELOCITY_CONTROL_MODE && operationMode !=
+        PWM_CONTROL_MODE) {
         operationMode = POSITION_CONTROL_MODE;
     }
     dxl_comm_result = packetHandler->write1ByteTxRx(portHandler, this->getMotorID(), ADDR_OPERATING_MODE,
@@ -167,20 +154,22 @@ int Motor::setMotorOperationMode(dynamixel::PacketHandler *packetHandler, dynami
     } else if (dxl_error != 0) {
         printf("%s\n", packetHandler->getRxPacketError(dxl_error));
     } else {
+        char buffer[1024];
         switch (operationMode) {
             case EXTENDED_POSITION_CONTROL_MODE:
-                printf("[info]: Operating mode changed to extended position control mode. \n");
+                sprintf(buffer, "Operating mode changed to extended position control mode. \n");
                 break;
             case VELOCITY_CONTROL_MODE:
-                printf("[info]: Operating mode changed to velocity control mode. \n");
+                sprintf(buffer, "Operating mode changed to velocity control mode. \n");
                 break;
             case PWM_CONTROL_MODE:
-                printf("[info]: Operating mode changed to PWM control mode. \n");
+                sprintf(buffer, "Operating mode changed to PWM control mode. \n");
                 break;
             default:
-                printf("[info]: Operating mode changed to position control mode. \n");
+                sprintf(buffer, "Operating mode changed to position control mode. \n");
                 break;
         }
+        printLog(LOG_INFO, buffer);
     }
     return operationMode;
 }
@@ -191,11 +180,22 @@ void Motor::ledOperationMode(dynamixel::PacketHandler *packetHandler, dynamixel:
     uint8_t dxl_error = 0; // Dynamixel error
     dxl_comm_result = packetHandler->write1ByteTxRx(portHandler, this->getMotorID(), ADDR_LED,
                                                     ledStatus, &dxl_error);
+    char buffer[1024];
     if (dxl_comm_result != COMM_SUCCESS) {
-        fprintf(stderr, "%s\n", packetHandler->getTxRxResult(dxl_comm_result));
+        sprintf(buffer, "%s\n", packetHandler->getTxRxResult(dxl_comm_result));
+        printLog(LOG_ERROR, buffer);
     } else if (dxl_error != 0) {
-        fprintf(stderr, "%s\n", packetHandler->getRxPacketError(dxl_error));
+        sprintf(buffer, "%s\n", packetHandler->getRxPacketError(dxl_error));
+        printLog(LOG_ERROR, buffer);
     } else {
-        printf("[info]: LED turned %s. \n", ledStatus == LED_ON ? "ON" : "OFF");
+        sprintf(buffer, "LED turned %s. \n", ledStatus == LED_ON ? "ON" : "OFF");
+        printLog(LOG_INFO, buffer);
     }
+}
+
+
+double Motor::mmToDynamixelUnits(double mm) const {
+    // Example: 4096 steps per revolution, pulley circumference = pi * diameter
+    double steps_per_mm = 4096.0 / (M_PI * this->pulley_diameter_mm);
+    return mm * steps_per_mm;
 }
