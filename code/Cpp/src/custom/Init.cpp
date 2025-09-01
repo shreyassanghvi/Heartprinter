@@ -6,6 +6,7 @@
 #include <unistd.h>
 
 #include "../../include/Trackstar/ATC3DG.h"
+#include "../../include/spdlog/spdlog.h"
 
 // #define for various definitions for the DYNAMIXEL
 #define PROTOCOL_VERSION                2.0                 // See which protocol version is used in the DYNAMIXEL
@@ -68,7 +69,7 @@ int setupMotorPort() {
         return EXIT_FAILURE;
     }
 
-    // Set port baudrate
+    // Set port baudrate0000000000000000000000000000000000000000000000000000000-
     if (portHandler->setBaudRate(BAUDRATE)) {
         printf("Succeeded to change the baudrate!\n");
     } else {

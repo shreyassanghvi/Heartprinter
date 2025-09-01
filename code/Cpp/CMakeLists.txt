@@ -49,6 +49,13 @@ target_include_directories(dynamixel_sdk_static PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/c++/include/dynamixel_sdk
 )
 
+# === Add spdlog as a subdirectory two levels up from current directory ===
+add_subdirectory(
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../spdlog
+        ${CMAKE_CURRENT_BINARY_DIR}/spdlog_build
+)
+
+
 # === Platform-specific Linking and Library Naming ===
 if(WIN32)
     target_link_libraries(dynamixel_sdk ws2_32 winmm)
@@ -65,7 +72,6 @@ if(WIN32)
 
     add_library(NIDAQmx SHARED IMPORTED GLOBAL)
     set_target_properties(NIDAQmx PROPERTIES
-#            IMPORTED_LOCATION "C:/Program Files (x86)/Northern Digital Inc/3D Guidance driveBAY/3DG API Developer/3DG API/ATC3DG64.dll"
             IMPORTED_IMPLIB "C:/Program Files (x86)/National Instruments/Shared/ExternalCompilerSupport/C/lib64/msvc/NIDAQmx.lib"
             INTERFACE_INCLUDE_DIRECTORIES "C:/Program Files (x86)/National Instruments/Shared/ExternalCompilerSupport/C/lib64/msvc/"
     )
@@ -76,15 +82,22 @@ endif()
 # === Main Executable ===
 add_executable(${PROJECT_NAME} ${SOURCES})
 
+# Link spdlog target and other libraries after executable declaration
+target_link_libraries(${PROJECT_NAME}
+        PRIVATE
+        spdlog::spdlog
+)
+
 if(WIN32)
     target_link_libraries(${PROJECT_NAME}
-            NIDAQmx
+            PRIVATE
             NIDAQmx
             dynamixel_sdk
             ATC3DG64
     )
 else()
     target_link_libraries(${PROJECT_NAME}
+            PRIVATE
             dynamixel_sdk
     )
 endif()

@@ -151,12 +151,12 @@ void initTxRx() {
     printf("Number Sensors:\t\t\t\t%d\n", ATC3DG.m_config.numberSensors);
     printf("Number Transmitters:\t\t\t%d\n", ATC3DG.m_config.numberTransmitters);
 
-    // printf("System AGC mode         = %d\n", ATC3DG.m_config.agcMode);
-    // printf("Maximum Range           = %6.2f\n", ATC3DG.m_config.maximumRange);
-    // printf("Measurement Rate        = %10.6f\n", ATC3DG.m_config.measurementRate);
-    // printf("Metric Mode             = %d\n", ATC3DG.m_config.metric);
-    // printf("Line Frequency          = %6.2f\n", ATC3DG.m_config.powerLineFrequency);
-    // printf("Transmitter ID Running  = %d\n", ATC3DG.m_config.transmitterIDRunning);
+    printf("System AGC mode         = %d\n", ATC3DG.m_config.agcMode);
+    printf("Maximum Range           = %6.2f\n", ATC3DG.m_config.maximumRange);
+    printf("Measurement Rate        = %10.6f\n", ATC3DG.m_config.measurementRate);
+    printf("Metric Mode             = %d\n", ATC3DG.m_config.metric);
+    printf("Line Frequency          = %6.2f\n", ATC3DG.m_config.powerLineFrequency);
+    printf("Transmitter ID Running  = %d\n", ATC3DG.m_config.transmitterIDRunning);
 
     //////////////////////////////////////////////////////////////////////////////
     //////////////////////////////////////////////////////////////////////////////
@@ -459,7 +459,7 @@ DOUBLE_POSITION_ANGLES_RECORD readATI(short sensID) {
         unsigned int status = GetSensorStatus(sensorID);
 
         if (status == VALID_STATUS) {
-            // send output to console
+            //TODO: LOGGING
             break;
         }
     }
