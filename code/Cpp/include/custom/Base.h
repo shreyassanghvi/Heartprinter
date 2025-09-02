@@ -3,9 +3,11 @@
 #include "../Trackstar/ATC3DG.h"
 #include "Motor.h"
 
+#include <spdlog/spdlog.h>
+
 class Base {
 public:
-    explicit Base(const DOUBLE_POSITION_ANGLES_RECORD &anchor_);
+    explicit Base(const DOUBLE_POSITION_ANGLES_RECORD &anchor_, int id);
 
     double computeCableLength(const DOUBLE_POSITION_ANGLES_RECORD &platform) const;
 

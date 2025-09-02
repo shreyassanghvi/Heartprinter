@@ -91,8 +91,8 @@ void errorHandler(int error, int lineNum) {
         //	displayed on succeeding lines then a newline "\n" needs to be added.
         //
         // printf("%s %d\n", buffer, lineNum);
-        sprintf(buffer, "%s %d\n", buffer, lineNum);
-        printLog(LOG_ERROR, buffer);
+        spdlog::error("TrackStar: %s %d\n", buffer, lineNum);
+        // printLog(LOG_ERROR, buffer);
         currentError = nextError;
     } while (currentError != BIRD_ERROR_SUCCESS);
 
@@ -121,7 +121,7 @@ void initTxRx() {
     // permanent failure - contact tech support.
     // A call to InitializeBIRDSystem() does not return any information.
     //
-    printf("\n\nInitializing ATC3DG system...");
+    printf("Initializing ATC3DG system...");
     printf("\n==========================================\n");
     errorCode = InitializeBIRDSystem();
     if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
@@ -465,4 +465,7 @@ DOUBLE_POSITION_ANGLES_RECORD readATI(short sensID) {
     }
 
     return record;
+}
+int getConnectedSensors() {
+    return ATC3DG.m_config.numberSensors;
 }

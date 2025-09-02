@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <unistd.h>
 #include <cmath>
+
 // #define for LED states
 #define LED_ON                          1                   // Value for LED on
 #define LED_OFF                         0                   // Value for LED off
@@ -103,8 +104,9 @@ bool Motor::setMotorDestination(dynamixel::GroupSyncWrite *groupSyncWrite, doubl
     // Allocate goal position value into byte array
     if (groupSyncWrite == nullptr) {
         char buffer[1024];
+        spdlog::error("[ID:%03d] groupSyncWrite addparam failed: null", this->getMotorID());
         sprintf(buffer, "[ID:%03d] groupSyncWrite addparam failed: null", this->getMotorID());
-        printLog(LOG_ERROR, buffer);
+        // printLog(LOG_ERROR, buffer);
         return false;
     }
     uint8_t param_goal_position[4];
@@ -115,7 +117,7 @@ bool Motor::setMotorDestination(dynamixel::GroupSyncWrite *groupSyncWrite, doubl
     if (groupSyncWrite->addParam(this->getMotorID(), param_goal_position) == false) {
         char buffer[1024];
         sprintf(buffer, "[ID:%03d] groupSyncWrite addparam failed", this->getMotorID());
-        printLog(LOG_ERROR, buffer);
+        // printLog(LOG_ERROR, buffer);
         return false;
     }
     return true;
@@ -127,7 +129,7 @@ uint32_t Motor::checkAndGetPresentPosition(dynamixel::GroupSyncRead *groupSyncRe
         isAvailable(this->getMotorID(), ADDR_PRESENT_POSITION, LEN_PRESENT_POSITION) != true) {
         char buffer[1024];
         sprintf(buffer, "[ID:%03d] groupSyncRead getdata failed", this->getMotorID());
-        printLog(LOG_ERROR, buffer);
+        // printLog(LOG_ERROR, buffer);
         return EXIT_FAILURE;
     }
     this->motor.DXL_PRESENT_POSITION_VALUE = groupSyncRead->getData(this->getMotorID(), ADDR_PRESENT_POSITION,
@@ -169,7 +171,7 @@ int Motor::setMotorOperationMode(dynamixel::PacketHandler *packetHandler, dynami
                 sprintf(buffer, "Operating mode changed to position control mode. \n");
                 break;
         }
-        printLog(LOG_INFO, buffer);
+        // printLog(LOG_INFO, buffer);
     }
     return operationMode;
 }
@@ -183,13 +185,13 @@ void Motor::ledOperationMode(dynamixel::PacketHandler *packetHandler, dynamixel:
     char buffer[1024];
     if (dxl_comm_result != COMM_SUCCESS) {
         sprintf(buffer, "%s\n", packetHandler->getTxRxResult(dxl_comm_result));
-        printLog(LOG_ERROR, buffer);
+        // printLog(LOG_ERROR, buffer);
     } else if (dxl_error != 0) {
         sprintf(buffer, "%s\n", packetHandler->getRxPacketError(dxl_error));
-        printLog(LOG_ERROR, buffer);
+        // printLog(LOG_ERROR, buffer);
     } else {
         sprintf(buffer, "LED turned %s. \n", ledStatus == LED_ON ? "ON" : "OFF");
-        printLog(LOG_INFO, buffer);
+        // printLog(LOG_INFO, buffer);
     }
 }
 

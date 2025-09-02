@@ -163,8 +163,8 @@ struct AnalogContext {
     DataCallback dataCallback = nullptr;
     ErrorCallback errorCallback = nullptr;
     uInt32 samplesPerCallback = 0;
+    uInt32 numChannels = 1;
 };
-
 
 void *DAQ_Init(const AnalogConfig &config, const DataCallback dataCB, const ErrorCallback errorCB) {
     int32 error = 0;
@@ -180,6 +180,9 @@ void *DAQ_Init(const AnalogConfig &config, const DataCallback dataCB, const Erro
     DAQmxErrChk(DAQmxCreateAIVoltageChan(ctx->taskHandle, chanSpec, "",
         DAQmx_Val_Cfg_Default, config.minVoltage,
         config.maxVoltage, DAQmx_Val_Volts, nullptr));
+
+    // Query number of channels
+    DAQmxErrChk(DAQmxGetTaskNumChans(ctx->taskHandle, &ctx->numChannels));
 
     // Configure timing and callbacks
     DAQmxErrChk(DAQmxCfgSampClkTiming(ctx->taskHandle, "", config.sampleRate,
@@ -252,11 +255,16 @@ static int32 CVICALLBACK EveryNCallback(TaskHandle taskHandle, int32 everyNsampl
     int32 read = 0;
 
     // Use vector for safe memory management
-    std::vector<float64> data(ctx->samplesPerCallback);
+    std::vector<float64> data((ctx->samplesPerCallback * ctx->numChannels));
 
-    error = DAQmxReadAnalogF64(taskHandle, ctx->samplesPerCallback, 10.0,
-                               DAQmx_Val_GroupByScanNumber, data.data(),
-                               ctx->samplesPerCallback, &read, nullptr);
+    error = DAQmxReadAnalogF64(taskHandle,
+                               ctx->samplesPerCallback,
+                               10.0,
+                               DAQmx_Val_GroupByScanNumber,
+                               data.data(),
+                               static_cast<int32>(ctx->samplesPerCallback * ctx->numChannels),
+                               &read,
+                               nullptr);
 
     if (DAQmxFailed(error)) {
         if (ctx->errorCallback) {

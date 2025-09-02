@@ -1,7 +1,7 @@
 #include "../../include/custom/Base.h"
 #include <cmath>
 
-Base::Base(const DOUBLE_POSITION_ANGLES_RECORD &anchor_) : anchor(anchor_), cableLength(0.0) {
+Base::Base(const DOUBLE_POSITION_ANGLES_RECORD &anchor_, int id) : anchor(anchor_), cableLength(0.0), motor(id) {
 }
 double Base::computeCableDelta(const DOUBLE_POSITION_ANGLES_RECORD &src,
                                const DOUBLE_POSITION_ANGLES_RECORD &dest) const {
