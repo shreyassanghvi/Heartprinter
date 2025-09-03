@@ -2,7 +2,9 @@
 #define MOTOR_H
 
 #include "../Dynamixel_SDK/dynamixel_sdk.h"
-#include "log.h"
+
+
+#include <spdlog/spdlog.h>
 
 #define TORQUE_ENABLE                   1                   // Value for enabling the torque
 #define TORQUE_DISABLE                  0                   // Value for disabling the torque

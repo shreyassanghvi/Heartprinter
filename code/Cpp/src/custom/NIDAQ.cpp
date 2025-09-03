@@ -163,8 +163,8 @@ struct AnalogContext {
     DataCallback dataCallback = nullptr;
     ErrorCallback errorCallback = nullptr;
     uInt32 samplesPerCallback = 0;
+    uInt32 numChannels = 1;
 };
-
 
 void *DAQ_Init(const AnalogConfig &config, const DataCallback dataCB, const ErrorCallback errorCB) {
     int32 error = 0;
@@ -181,6 +181,9 @@ void *DAQ_Init(const AnalogConfig &config, const DataCallback dataCB, const Erro
         DAQmx_Val_Cfg_Default, config.minVoltage,
         config.maxVoltage, DAQmx_Val_Volts, nullptr));
 
+    // Query number of channels
+    DAQmxErrChk(DAQmxGetTaskNumChans(ctx->taskHandle, &ctx->numChannels));
+
     // Configure timing and callbacks
     DAQmxErrChk(DAQmxCfgSampClkTiming(ctx->taskHandle, "", config.sampleRate,
         DAQmx_Val_Rising, DAQmx_Val_ContSamps,
@@ -189,10 +192,11 @@ void *DAQ_Init(const AnalogConfig &config, const DataCallback dataCB, const Erro
         DAQmx_Val_Acquired_Into_Buffer, config.samplesPerCallback, 0,
         EveryNCallback, ctx));
     DAQmxErrChk(DAQmxRegisterDoneEvent(ctx->taskHandle, 0, DoneCallback, ctx));
-
+    spdlog::info("DAQ_Init successful");
     return ctx;
 
 Error:
+    spdlog::error("DAQ_Init failed");
     if (error && errorCB) {
         char errBuff[2048];
         DAQmxGetExtendedErrorInfo(errBuff, sizeof(errBuff));
@@ -208,7 +212,8 @@ Error:
 int DAQStart(void *handle) {
     const auto *ctx = static_cast<AnalogContext *>(handle);
     if (!ctx || !ctx->taskHandle) {
-        printf("ERR: incorrect handle passed to DAQ_Start\n");
+        // printf("ERR: incorrect handle passed to DAQ_Start\n");
+        spdlog::error("Invalid handle passed to DAQ_Start");
         return EXIT_FAILURE;
     }
 
@@ -226,7 +231,8 @@ int DAQStart(void *handle) {
 int DAQStop(void *handle) {
     const auto *ctx = static_cast<AnalogContext *>(handle);
     if (!ctx || !ctx->taskHandle) {
-        printf("ERR: invalid taskHandle passed to DAQ_Stop\n");
+        // printf("ERR: invalid taskHandle passed to DAQ_Stop\n");
+        spdlog::error("Invalid taskHandle passed to DAQ_Stop");
         return EXIT_FAILURE;
     }
     DAQmxStopTask(ctx->taskHandle);
@@ -252,11 +258,16 @@ static int32 CVICALLBACK EveryNCallback(TaskHandle taskHandle, int32 everyNsampl
     int32 read = 0;
 
     // Use vector for safe memory management
-    std::vector<float64> data(ctx->samplesPerCallback);
+    std::vector<float64> data((ctx->samplesPerCallback * ctx->numChannels));
 
-    error = DAQmxReadAnalogF64(taskHandle, ctx->samplesPerCallback, 10.0,
-                               DAQmx_Val_GroupByScanNumber, data.data(),
-                               ctx->samplesPerCallback, &read, nullptr);
+    error = DAQmxReadAnalogF64(taskHandle,
+                               ctx->samplesPerCallback,
+                               10.0,
+                               DAQmx_Val_GroupByScanNumber,
+                               data.data(),
+                               static_cast<int32>(ctx->samplesPerCallback * ctx->numChannels),
+                               &read,
+                               nullptr);
 
     if (DAQmxFailed(error)) {
         if (ctx->errorCallback) {
@@ -299,7 +310,8 @@ DAQSystem initDAQSystem(const DigitalConfig &digiConfig,
     if (system.digitalTask) {
         digitalOK = true;
     } else {
-        printf("Digital initialization failed\n");
+        spdlog::error("DAQ Digital channel init fail");
+        // printf("Digital initialization failed\n");
     }
 
     // Initialize analog input
@@ -307,7 +319,8 @@ DAQSystem initDAQSystem(const DigitalConfig &digiConfig,
     if (system.analogHandle) {
         analogOK = true;
     } else {
-        printf("Analog initialization failed\n");
+        // printf("Analog initialization failed\n");
+        spdlog::error("DAQ Analog channel init fail");
     }
 
     // Set initialization flag

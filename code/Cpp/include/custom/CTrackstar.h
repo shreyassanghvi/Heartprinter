@@ -5,7 +5,8 @@
 #include "conio.h"
 #include "../Trackstar/ATC3DG.h"
 #include "../Trackstar/StdAfx.h"
-#include "LOG.h"
+
+#include <spdlog/spdlog.h>
 
 class CSystem {
 public:
@@ -27,11 +28,14 @@ public:
     BOARD_CONFIGURATION m_config;
 };
 
+
 int kbhit(void);
 
 void initTxRx(void);
 
 void errorHandler(int error, int lineNum);
+
+int getConnectedSensors();
 
 DOUBLE_POSITION_ANGLES_RECORD readATI(short sensID);
 

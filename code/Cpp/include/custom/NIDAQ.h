@@ -5,8 +5,8 @@
 #include <cstdlib>
 #include <Windows.h>
 #include "../../include/NIDAQmx/NIDAQmx.h"
-#include "log.h"
 
+#include <spdlog/spdlog.h>
 // -------------------- Type Definitions --------------------
 #define LED_ON 1
 #define LED_OFF 0

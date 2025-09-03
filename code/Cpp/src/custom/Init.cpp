@@ -3,10 +3,21 @@
 //
 #include "../../include/custom/Init.h"
 
+#include <iomanip>
 #include <unistd.h>
 
 #include "../../include/Trackstar/ATC3DG.h"
 
+#include <spdlog/sinks/basic_file_sink.h>
+#include <spdlog/sinks/stdout_color_sinks.h>
+
+#include <filesystem>
+
+#include <chrono>
+#include <sstream>
+#include <iostream>
+
+namespace fs = std::filesystem;
 // #define for various definitions for the DYNAMIXEL
 #define PROTOCOL_VERSION                2.0                 // See which protocol version is used in the DYNAMIXEL
 // #define DEVICENAME                      "COM4"      // ex) Windows: "COM1"   Linux: "/dev/ttyUSB0" Mac: "/dev/tty.usbserial-*"
@@ -17,10 +28,13 @@
 //user defined #define
 #define RECORD_CNT                          1000                 // Number of records to collect
 #define MOTOR_CNT                           3                  // Number of motors to control
-#define SENSOR_ID_LEFT                      0                  // Sensor ID to use for left
-#define SENSOR_ID_BASE                      1                  // Sensor ID to use for base
-#define SENSOR_ID_RIGHT                     2                  // Sensor ID to use for right
-#define SENSOR_ID_INJECTOR                  3                  // Sensor ID to use for injector
+
+enum TRACKSTAR_SENSORS_ID {
+    LEFT_SENSOR = 0,
+    BASE_SENSOR,
+    RIGHT_SENSOR,
+    MOVING_BASE_SENSOR,
+};
 
 STATES state;
 // Initialize PortHandler instance
@@ -39,42 +53,23 @@ dynamixel::GroupSyncWrite groupSyncWrite(portHandler, packetHandler, ADDR_GOAL_P
 dynamixel::GroupSyncRead groupSyncRead(portHandler, packetHandler, ADDR_PRESENT_POSITION, LEN_PRESENT_POSITION);
 
 
-/**
- * @brief Reads a single character from the console without echoing it.
- * @return The character read, or EOF on failure.
- */
-int getch() {
-#if defined(__linux__) || defined(__APPLE__)
-    termios oldt{}, newt{};
-    tcgetattr(STDIN_FILENO, &oldt);
-    newt = oldt;
-    newt.c_lflag &= ~(ICANON | ECHO);
-    tcsetattr(STDIN_FILENO, TCSANOW, &newt);
-    int ch = getchar();
-    tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
-    return ch;
-#elif defined(_WIN32) || defined(_WIN64)
-    return _getch();
-#endif
-}
-
 int setupMotorPort() {
     if (portHandler->openPort()) {
-        printf("Succeeded to open the port!\n");
+        spdlog::info("Succeeded to open the port!");
     } else {
-        printf("Failed to open the port!\n");
-        printf("Press any key to terminate...\n");
-        getch();
+        spdlog::error("Failed to open the port!");
+        spdlog::error("Press any key to terminate...");
+        _getch();
         return EXIT_FAILURE;
     }
 
     // Set port baudrate
     if (portHandler->setBaudRate(BAUDRATE)) {
-        printf("Succeeded to change the baudrate!\n");
+        spdlog::info("Succeeded to change the baudrate!");
     } else {
-        printf("Failed to change the baudrate!\n");
-        printf("Press any key to terminate...\n");
-        getch();
+        spdlog::error("Failed to change the baudrate!");
+        spdlog::error("Press any key to terminate...");
+        _getch();
         return EXIT_FAILURE;
     }
 
@@ -86,16 +81,10 @@ int initMotors(Motor motors) {
     motors.setMotorOperationMode(packetHandler, portHandler, EXTENDED_POSITION_CONTROL_MODE);
     // Enable Dynamixel#i Torque
     dxl_error += motors.enableTorque(packetHandler, portHandler);
-    printf("=============================\n");
     if (dxl_error != 0) {
+        spdlog::error("Failed to enable torque for motor #{}", motors.getMotorID());
         return EXIT_FAILURE;
     }
-
-    // Add parameter storage for Dynamixel#1 present position value
-    if (groupSyncRead.addParam(motors.getMotorID()) != true) {
-        return EXIT_FAILURE;
-    }
-
     return EXIT_SUCCESS;
 }
 
@@ -118,7 +107,7 @@ void cleanUpAndExit() {
 void DataHandler(double *data, uInt32 numSamples) {
     try {
         if (!data || numSamples == 0) {
-            printf("WARNING: Invalid data or sample count in DataHandler!\n");
+            spdlog::warn("Invalid data or sample count in DataHandler!");
             return;
         }
         // printf("Test\n");
@@ -127,20 +116,65 @@ void DataHandler(double *data, uInt32 numSamples) {
         //     printf("No data\n");
         //     return;
         // }
-        std::vector<double> vData(data, data + numSamples);
-        printf("DAQ - Sample Count: %4u - Received Data[0] - %8.5f\n",
-               numSamples,
-               data[0]);
+        std::vector vData(data, data + numSamples);
+        spdlog::info("DAQ - Sample Count: {} - Received Data[0] - {:8.5f}",
+                     numSamples,
+                     data[0]);
     } catch (std::exception &e) {
-        printf("Error: %s\n", e.what());
+        spdlog::error("Error: {}", e.what());
 
         state = ERR;
     }
 }
 
-void ErrorHandler(const char *errorMessage) {
-    fprintf(stderr, "DAQ ERROR: %s\n", errorMessage);
-    // state = ERR;
+void ErrorHandlerDAQ(const char *errorMessage) {
+    spdlog::error("DAQ Error: {}", errorMessage);
+    state = ERR;
+}
+
+std::shared_ptr<spdlog::logger> create_dated_logger(bool make_default) {
+    std::string log_dir = "../../logs/cpp";
+    std::filesystem::create_directories("log_dir");
+
+    // Get current time
+    auto now = std::chrono::system_clock::now();
+    std::time_t tt = std::chrono::system_clock::to_time_t(now);
+
+    std::tm tm;
+#ifdef _WIN32
+    localtime_s(&tm, &tt);
+#else
+    localtime_r(&tt, &tm);
+#endif
+
+    std::ostringstream oss;
+    oss << log_dir<<"/log_"
+            << std::put_time(&tm, "%Y%m%d_%H%M%S")
+            << ".txt";
+
+    std::string filename = oss.str();
+    try {
+        // Create sinks: file sink and color console sink
+        auto file_sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(filename, true);
+        auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+
+        std::vector<spdlog::sink_ptr> sinks{file_sink, console_sink};
+
+        // Create logger with both sinks
+        auto logger = std::make_shared<spdlog::logger>("multi_sink", sinks.begin(), sinks.end());
+
+        if (make_default) {
+            register_logger(logger);
+            set_default_logger(logger);
+        }
+        spdlog::set_level(spdlog::level::debug);
+        spdlog::set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%^%L%$]:\t%v"); // Coloring enabled with %^
+        spdlog::info("Logger initialized with both file and console sinks");
+        return logger;
+    } catch (const std::exception &e) {
+        spdlog::error("Failed to create logger: {}", e.what());
+        return nullptr;
+    }
 }
 
 //Init commit for Control loop code
@@ -156,28 +190,20 @@ int main(int argc, char *argv[]) {
     int motor_destination[MOTOR_CNT];
 
     DAQSystem daqSystem;
-    DOUBLE_POSITION_ANGLES_RECORD retRecord;
-    retRecord.a = 0;
-    retRecord.e = 0;
-    retRecord.r = 0;
+    DOUBLE_POSITION_ANGLES_RECORD retRecord{};
 
-    retRecord.x = 0;
-    retRecord.y = 0;
-    retRecord.z = 0;
     //TODO: check and fix state machine
-    char buf[BUFSIZ];
     while (true) {
         switch (state) {
             case START:
                 dxl_comm_result = COMM_SUCCESS;
                 groupSyncWrite.clearParam();
                 state = INIT_DAQ;
-                setLogLevel(LOG_FATAL);
-                printf("\n=====================================\n");
+            // setLogLevel(LOG_FATAL);
+                create_dated_logger(true);
                 break;
             case INIT_DAQ: {
-                printf("=====================================\n");
-                printf("Initializing the daq...\n");
+                spdlog::info("Initializing the daq...");
                 DigitalConfig digiConfig = {"Dev1", "PFI0:2"};
                 AnalogConfig analogConfig = {
                     "Dev1", "ai0:2",
@@ -185,39 +211,43 @@ int main(int argc, char *argv[]) {
                     10000.0,
                     1000
                 };
-                daqSystem = initDAQSystem(digiConfig, analogConfig, DataHandler, ErrorHandler);
+                spdlog::info("DigitalConfig - Device: {}, Channel: {}", digiConfig.device, digiConfig.channel);
+
+                spdlog::info("AnalogConfig - Device: {}, Channel: {}, MinVoltage: {:.2f}, MaxVoltage: {:.2f}, SampleRate: {:.2f}, SamplesPerCallback: {}",
+                             analogConfig.device, analogConfig.channel,
+                             analogConfig.minVoltage, analogConfig.maxVoltage,
+                             analogConfig.sampleRate, analogConfig.samplesPerCallback);
+
+                daqSystem = initDAQSystem(digiConfig, analogConfig, DataHandler, ErrorHandlerDAQ);
                 if (!daqSystem.initialized) {
-                    sprintf(buf, "Failed to initialize DAQ system\n");
-                    printLog(LOG_ERROR, buf);
+                    spdlog::error("Failed to initialize DAQ system");
+                    // printLog(LOG_ERROR, buf);
                     state = ERR;
                     break;
                 }
                 if (setAllLEDs(daqSystem.digitalTask, LED_ON) != EXIT_SUCCESS) {
-                    sprintf(buf, "Failed to set all LEDs off\n");
-                    printLog(LOG_ERROR, buf);
+                    spdlog::error("Failed to set all LEDs off");
+                    // printLog(LOG_ERROR, buf);
                     state = ERR;
                     break;
                 }
                 sleep(1);
                 if (setAllLEDs(daqSystem.digitalTask, LED_OFF) != EXIT_SUCCESS) {
-                    sprintf(buf, "Failed to set all LEDs off\n");
-                    printLog(LOG_ERROR, buf);
+                    spdlog::error("Failed to set all LEDs off");
+                    // printLog(LOG_ERROR, buf);
                     state = ERR;
                     break;
                 }
-                printf("=====================================\n");
-                state = INIT_MOTORS;
+                state = INIT_TRACKSTAR; //INIT_MOTORS;
                 break;
             }
             case INIT_MOTORS:
-                printf("Initializing motors...");
-                printf("\n=====================================\n");
-                if (setupMotorPort()) {
+                spdlog::info("Initializing motors...");
+                if (setupMotorPort() != EXIT_SUCCESS) {
                     state = ERR;
                     ERR_FLG = 1;
                     break;
                 }
-                printf("=============================\n");
                 for (int i = 0; i < MOTOR_CNT; i++) {
                     motor_destination[i] = 0;
                     vMotors.emplace_back(i);
@@ -233,7 +263,10 @@ int main(int argc, char *argv[]) {
                     }
                 }
                 dxl_comm_result = groupSyncWrite.txPacket();
-                if (dxl_comm_result != COMM_SUCCESS) printf("%s\n", packetHandler->getTxRxResult(dxl_comm_result));
+                if (dxl_comm_result != COMM_SUCCESS) {
+                    spdlog::error("{}", packetHandler->getTxRxResult(dxl_comm_result));
+                    state = ERR;
+                }
                 groupSyncWrite.clearParam();
                 if (state == ERR) {
                     break;
@@ -247,34 +280,51 @@ int main(int argc, char *argv[]) {
 
             case INIT_LOADCELL:
                 //TODO: Initialize load cell
-                printf("TODO: Initializing load cell...\n");
-                printLog(LOG_WARN, "TODO: Initializing load cell...\n");
+                spdlog::warn("TODO: Initializing load cell...");
                 DAQStart(daqSystem.analogHandle);
                 state = READ_TRACKSTAR;
                 break;
 
             case READ_TRACKSTAR:
                 if (data_count == 0) {
-                    printLog(LOG_INFO, "=====================================\n");
-                    sprintf(buf, "Collect %4d Data records from Sensors\n",RECORD_CNT);
-                    printLog(LOG_INFO, buf);
-                    printLog(LOG_INFO, "=====================================\n");
-                    printLog(LOG_INFO, "Note: Metric mode was selected, position is in mm.\n");
-                    printLog(LOG_INFO, "\t-----------\n");
+                    spdlog::info("Collect {} Data records from Sensors",RECORD_CNT);
+
+                    spdlog::info("Metric mode was selected, position is in mm.");
                 }
                 if (data_count < RECORD_CNT) {
-                    retRecord = readATI(SENSOR_ID_LEFT);
-                    data_count++;
-                    sprintf(buf, "TS: %4ld [%d] %8.3f %8.3f %8.3f: %8.2f %8.2f %8.2f\n",
-                            data_count,
-                            SENSOR_ID_LEFT,
-                            retRecord.x, retRecord.y, retRecord.z,
-                            retRecord.a, retRecord.e, retRecord.r
-                    );
-                    printLog(LOG_INFO, buf);
-                    state = READ_DAQ;
+                    for (auto i = 0; i < getConnectedSensors(); i++) {
+                        retRecord = readATI(i);
+                        data_count++;
+                        std::string sensorName;
+                        switch (i) {
+                            case LEFT_SENSOR:
+                                sensorName = "L";
+                                break;
+                            case RIGHT_SENSOR:
+                                sensorName = "R";
+                                break;
+                            case BASE_SENSOR:
+                                sensorName = "C";
+                                break;
+                            case MOVING_BASE_SENSOR:
+                                sensorName = "M";
+                                break;
+                            default:
+                                sensorName = "Unknown";
+                                spdlog::error("Incorrect sensor ID");
+                                state = ERR;
+                                break;
+                        }
+
+                        spdlog::info("TS: [{}] {:8.3f} {:8.3f} {:8.3f} : {:8.3f} {:8.3f} {:8.3f}",
+                                     sensorName,
+                                     retRecord.x, retRecord.y, retRecord.z,
+                                     retRecord.a, retRecord.e, retRecord.r);
+                    }
+                    if (state != ERR) {
+                        state = READ_DAQ;
+                    }
                 } else {
-                    printLog(LOG_INFO, "=====================================\n");
                     state = END;
                 }
                 break;
@@ -327,10 +377,12 @@ int main(int argc, char *argv[]) {
                     setLEDState(daqSystem.digitalTask, LED::RIGHT_BASE, LED_OFF);
                 }
 
-                printf("dx: %.2f, dy: %.2f, dz: %.2f | Dest: [%d, %d, %d]\n",
-                       dx, dy, dz, motor_destination[0], motor_destination[1], motor_destination[2]);
+                spdlog::info("dx: {:4.2f}, dy: {:4.2f}, dz: {:4.2f} | Dest: [{:4d}, {:4d}, {:4d}]",
+                             dx, dy, dz,
+                             motor_destination[0], motor_destination[1], motor_destination[2]);
 
-                state = MOVE_MOTORS;
+                spdlog::warn("State: MOVE_MOTORS disabled");
+                state = READ_TRACKSTAR;
                 break;
             }
 
@@ -347,7 +399,7 @@ int main(int argc, char *argv[]) {
                 }
                 dxl_comm_result = groupSyncWrite.txPacket();
                 if (dxl_comm_result != COMM_SUCCESS) {
-                    printf("%s\n", packetHandler->getTxRxResult(dxl_comm_result));
+                    spdlog::error("{}", packetHandler->getTxRxResult(dxl_comm_result));
                     state = ERR;
                     ERR_FLG = 1;
                 }
@@ -367,13 +419,14 @@ int main(int argc, char *argv[]) {
                     // Sync read present position
                     dxl_comm_result = groupSyncRead.txRxPacket();
                     if (dxl_comm_result != COMM_SUCCESS) {
-                        printf("%s\n", packetHandler->getTxRxResult(dxl_comm_result));
+                        // printf("%s\n", packetHandler->getTxRxResult(dxl_comm_result));
+                        spdlog::error("{}", packetHandler->getTxRxResult(dxl_comm_result));
                         state = ERR;
                         ERR_FLG = 1;
                         for (int i = 0; i < MOTOR_CNT; i++) {
                             if (groupSyncRead.getError(vMotors[i].getMotorID(), &dxl_error)) {
-                                printf("[ID:%03d] %s\n", vMotors[i].getMotorID(),
-                                       packetHandler->getRxPacketError(dxl_error));
+                                spdlog::error("[ID:{:3d}] {}\n", vMotors[i].getMotorID(),
+                                              packetHandler->getRxPacketError(dxl_error));
                             }
                         }
                     }
@@ -405,7 +458,7 @@ int main(int argc, char *argv[]) {
                 state = READ_TRACKSTAR;
                 break;
             case ERR:
-                fprintf(stderr, "User error\n");
+                spdlog::error("User error");
                 state = END;
                 break;
             case END:
@@ -430,7 +483,6 @@ int main(int argc, char *argv[]) {
 
             case CLEANUP_TRACKSTAR:
                 cleanUpAndExit();
-                printf("\n=====================================\n");
                 if (ERR_FLG != 0) {
                     return EXIT_FAILURE;
                 }

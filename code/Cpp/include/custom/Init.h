@@ -12,7 +12,6 @@
 //
 // #endif
 
-#include <conio.h>
 //ATI Trackstar headers
 #include "../Trackstar/StdAfx.h"
 #include "../Trackstar/ATC3DG.h"
@@ -24,10 +23,11 @@
 //Motor SDK Headers
 #include "../Dynamixel_SDK/dynamixel_sdk.h"
 
-// userdefined headers
-#include "log.h"
 
 #include "Motor.h"
+
+
+#include <spdlog/spdlog.h>
 
 enum STATES {
     START,
