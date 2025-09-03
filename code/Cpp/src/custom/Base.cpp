@@ -14,11 +14,14 @@ double Base::computeCableLength(const DOUBLE_POSITION_ANGLES_RECORD &platform) c
     double dx = anchor.x - platform.x;
     double dy = anchor.y - platform.y;
     double dz = anchor.z - platform.z;
+    spdlog::info("dx: {}, dy: {}, dz: {}", dx, dy, dz);
     return std::sqrt(dx * dx + dy * dy + dz * dz);
 }
 
 void Base::updateCableLength(const DOUBLE_POSITION_ANGLES_RECORD &platform) {
+    auto prevCableLength = cableLength;
     cableLength = computeCableLength(platform);
+    spdlog::info("prevCableLength: {}, cableLength: {}", prevCableLength, cableLength);
 }
 
 double Base::getCableLength() const {

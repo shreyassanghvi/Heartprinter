@@ -55,20 +55,20 @@ dynamixel::GroupSyncRead groupSyncRead(portHandler, packetHandler, ADDR_PRESENT_
 
 int setupMotorPort() {
     if (portHandler->openPort()) {
-        spdlog::info("Succeeded to open the port!\n");
+        spdlog::info("Succeeded to open the port!");
     } else {
-        spdlog::error("Failed to open the port!\n");
-        spdlog::error("Press any key to terminate...\n");
+        spdlog::error("Failed to open the port!");
+        spdlog::error("Press any key to terminate...");
         _getch();
         return EXIT_FAILURE;
     }
 
     // Set port baudrate
     if (portHandler->setBaudRate(BAUDRATE)) {
-        spdlog::info("Succeeded to change the baudrate!\n");
+        spdlog::info("Succeeded to change the baudrate!");
     } else {
-        spdlog::error("Failed to change the baudrate!\n");
-        spdlog::error("Press any key to terminate...\n");
+        spdlog::error("Failed to change the baudrate!");
+        spdlog::error("Press any key to terminate...");
         _getch();
         return EXIT_FAILURE;
     }
@@ -82,7 +82,7 @@ int initMotors(Motor motors) {
     // Enable Dynamixel#i Torque
     dxl_error += motors.enableTorque(packetHandler, portHandler);
     if (dxl_error != 0) {
-        spdlog::error("Failed to enable torque for motor {}", motors.getMotorID());
+        spdlog::error("Failed to enable torque for motor #{}", motors.getMotorID());
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;
@@ -107,7 +107,7 @@ void cleanUpAndExit() {
 void DataHandler(double *data, uInt32 numSamples) {
     try {
         if (!data || numSamples == 0) {
-            spdlog::warn("Invalid data or sample count in DataHandler!\n");
+            spdlog::warn("Invalid data or sample count in DataHandler!");
             return;
         }
         // printf("Test\n");
@@ -117,11 +117,11 @@ void DataHandler(double *data, uInt32 numSamples) {
         //     return;
         // }
         std::vector vData(data, data + numSamples);
-        spdlog::info("DAQ - Sample Count: {4u} - Received Data[0] - {8.5f}",
+        spdlog::info("DAQ - Sample Count: {} - Received Data[0] - {:8.5f}",
                      numSamples,
                      data[0]);
     } catch (std::exception &e) {
-        spdlog::error("Error: %s\n", e.what());
+        spdlog::error("Error: {}", e.what());
 
         state = ERR;
     }
@@ -133,7 +133,8 @@ void ErrorHandlerDAQ(const char *errorMessage) {
 }
 
 std::shared_ptr<spdlog::logger> create_dated_logger(bool make_default) {
-    std::filesystem::create_directories("logs");
+    std::string log_dir = "../../logs/cpp";
+    std::filesystem::create_directories("log_dir");
 
     // Get current time
     auto now = std::chrono::system_clock::now();
@@ -147,7 +148,7 @@ std::shared_ptr<spdlog::logger> create_dated_logger(bool make_default) {
 #endif
 
     std::ostringstream oss;
-    oss << "logs/log_"
+    oss << log_dir<<"/log_"
             << std::put_time(&tm, "%Y%m%d_%H%M%S")
             << ".txt";
 
@@ -167,7 +168,7 @@ std::shared_ptr<spdlog::logger> create_dated_logger(bool make_default) {
             set_default_logger(logger);
         }
         spdlog::set_level(spdlog::level::debug);
-        spdlog::set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%^%L%$]: %v"); // Coloring enabled with %^
+        spdlog::set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%^%L%$]:\t%v"); // Coloring enabled with %^
         spdlog::info("Logger initialized with both file and console sinks");
         return logger;
     } catch (const std::exception &e) {
@@ -225,14 +226,14 @@ int main(int argc, char *argv[]) {
                     break;
                 }
                 if (setAllLEDs(daqSystem.digitalTask, LED_ON) != EXIT_SUCCESS) {
-                    spdlog::error("Failed to set all LEDs off\n");
+                    spdlog::error("Failed to set all LEDs off");
                     // printLog(LOG_ERROR, buf);
                     state = ERR;
                     break;
                 }
                 sleep(1);
                 if (setAllLEDs(daqSystem.digitalTask, LED_OFF) != EXIT_SUCCESS) {
-                    spdlog::error("Failed to set all LEDs off\n");
+                    spdlog::error("Failed to set all LEDs off");
                     // printLog(LOG_ERROR, buf);
                     state = ERR;
                     break;
@@ -263,7 +264,7 @@ int main(int argc, char *argv[]) {
                 }
                 dxl_comm_result = groupSyncWrite.txPacket();
                 if (dxl_comm_result != COMM_SUCCESS) {
-                    spdlog::error("%s\n", packetHandler->getTxRxResult(dxl_comm_result));
+                    spdlog::error("{}", packetHandler->getTxRxResult(dxl_comm_result));
                     state = ERR;
                 }
                 groupSyncWrite.clearParam();
@@ -279,36 +280,34 @@ int main(int argc, char *argv[]) {
 
             case INIT_LOADCELL:
                 //TODO: Initialize load cell
-                spdlog::info("TODO: Initializing load cell...\n");
+                spdlog::warn("TODO: Initializing load cell...");
                 DAQStart(daqSystem.analogHandle);
                 state = READ_TRACKSTAR;
                 break;
 
             case READ_TRACKSTAR:
                 if (data_count == 0) {
-                    // printLog(LOG_INFO, "=====================================\n");
-                    spdlog::info("Collect %4d Data records from Sensors",RECORD_CNT);
+                    spdlog::info("Collect {} Data records from Sensors",RECORD_CNT);
 
                     spdlog::info("Metric mode was selected, position is in mm.");
-                    // printLog(LOG_INFO, "\t-----------\n");
                 }
                 if (data_count < RECORD_CNT) {
-                    for (short i = 0; i < getConnectedSensors(); i++) {
+                    for (auto i = 0; i < getConnectedSensors(); i++) {
                         retRecord = readATI(i);
                         data_count++;
                         std::string sensorName;
                         switch (i) {
                             case LEFT_SENSOR:
-                                sensorName = "Left";
+                                sensorName = "L";
                                 break;
                             case RIGHT_SENSOR:
-                                sensorName = "Right";
+                                sensorName = "R";
                                 break;
                             case BASE_SENSOR:
-                                sensorName = "Base";
+                                sensorName = "C";
                                 break;
                             case MOVING_BASE_SENSOR:
-                                sensorName = "MP";
+                                sensorName = "M";
                                 break;
                             default:
                                 sensorName = "Unknown";
@@ -317,8 +316,7 @@ int main(int argc, char *argv[]) {
                                 break;
                         }
 
-                        spdlog::info("TS: {:4d} [{}] {:8.3f} {:8.3f} {:8.3f}: {:8.2f} {:8.2f} {:8.2f}",
-                                     data_count,
+                        spdlog::info("TS: [{}] {:8.3f} {:8.3f} {:8.3f} : {:8.3f} {:8.3f} {:8.3f}",
                                      sensorName,
                                      retRecord.x, retRecord.y, retRecord.z,
                                      retRecord.a, retRecord.e, retRecord.r);
@@ -379,7 +377,7 @@ int main(int argc, char *argv[]) {
                     setLEDState(daqSystem.digitalTask, LED::RIGHT_BASE, LED_OFF);
                 }
 
-                spdlog::info("dx: {:.2f}, dy: {:.2f}, dz: {:.2f} | Dest: [{}, {}, {}]",
+                spdlog::info("dx: {:4.2f}, dy: {:4.2f}, dz: {:4.2f} | Dest: [{:4d}, {:4d}, {:4d}]",
                              dx, dy, dz,
                              motor_destination[0], motor_destination[1], motor_destination[2]);
 
@@ -401,7 +399,7 @@ int main(int argc, char *argv[]) {
                 }
                 dxl_comm_result = groupSyncWrite.txPacket();
                 if (dxl_comm_result != COMM_SUCCESS) {
-                    printf("%s\n", packetHandler->getTxRxResult(dxl_comm_result));
+                    spdlog::error("{}", packetHandler->getTxRxResult(dxl_comm_result));
                     state = ERR;
                     ERR_FLG = 1;
                 }
@@ -421,12 +419,13 @@ int main(int argc, char *argv[]) {
                     // Sync read present position
                     dxl_comm_result = groupSyncRead.txRxPacket();
                     if (dxl_comm_result != COMM_SUCCESS) {
-                        printf("%s\n", packetHandler->getTxRxResult(dxl_comm_result));
+                        // printf("%s\n", packetHandler->getTxRxResult(dxl_comm_result));
+                        spdlog::error("{}", packetHandler->getTxRxResult(dxl_comm_result));
                         state = ERR;
                         ERR_FLG = 1;
                         for (int i = 0; i < MOTOR_CNT; i++) {
                             if (groupSyncRead.getError(vMotors[i].getMotorID(), &dxl_error)) {
-                                spdlog::error("[ID:%03d] %s\n", vMotors[i].getMotorID(),
+                                spdlog::error("[ID:{:3d}] {}\n", vMotors[i].getMotorID(),
                                               packetHandler->getRxPacketError(dxl_error));
                             }
                         }

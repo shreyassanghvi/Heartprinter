@@ -91,7 +91,7 @@ void errorHandler(int error, int lineNum) {
         //	displayed on succeeding lines then a newline "\n" needs to be added.
         //
         // printf("%s %d\n", buffer, lineNum);
-        spdlog::error("TrackStar: %s %d\n", buffer, lineNum);
+        spdlog::error("TrackStar: {} {}\n", buffer, lineNum);
         // printLog(LOG_ERROR, buffer);
         currentError = nextError;
     } while (currentError != BIRD_ERROR_SUCCESS);
@@ -121,8 +121,7 @@ void initTxRx() {
     // permanent failure - contact tech support.
     // A call to InitializeBIRDSystem() does not return any information.
     //
-    printf("Initializing ATC3DG system...");
-    printf("\n==========================================\n");
+    spdlog::info("Initializing ATC3DG system...");
     errorCode = InitializeBIRDSystem();
     if (errorCode != BIRD_ERROR_SUCCESS) errorHandler(errorCode, __LINE__);
     //////////////////////////////////////////////////////////////////////////////
@@ -147,16 +146,23 @@ void initTxRx() {
     //
     // The SYSTEM_CONFIGURATION structure filled out by the initialization proc
     // contains the following:
-    printf("Number Boards:\t\t\t\t%d\n", ATC3DG.m_config.numberBoards);
-    printf("Number Sensors:\t\t\t\t%d\n", ATC3DG.m_config.numberSensors);
-    printf("Number Transmitters:\t\t\t%d\n", ATC3DG.m_config.numberTransmitters);
+    // printf("Number Boards:\t\t\t\t%d\n", ATC3DG.m_config.numberBoards);
+    // printf("Number Sensors:\t\t\t\t%d\n", ATC3DG.m_config.numberSensors);
+    // printf("Number Transmitters:\t\t\t%d\n", ATC3DG.m_config.numberTransmitters);
+    spdlog::info("Boards: {}, Sensors: {}, Transmitters: {}", ATC3DG.m_config.numberBoards,
+                 ATC3DG.m_config.numberSensors, ATC3DG.m_config.numberTransmitters);
 
-    printf("System AGC mode         = %d\n", ATC3DG.m_config.agcMode);
-    printf("Maximum Range           = %6.2f\n", ATC3DG.m_config.maximumRange);
-    printf("Measurement Rate        = %10.6f\n", ATC3DG.m_config.measurementRate);
-    printf("Metric Mode             = %d\n", ATC3DG.m_config.metric);
-    printf("Line Frequency          = %6.2f\n", ATC3DG.m_config.powerLineFrequency);
-    printf("Transmitter ID Running  = %d\n", ATC3DG.m_config.transmitterIDRunning);
+    // printf("System AGC mode         = %d\n", ATC3DG.m_config.agcMode);
+    // printf("Transmitter ID Running  = %d\n", ATC3DG.m_config.transmitterIDRunning);
+    spdlog::info("AGC: {}, Transmitter: {}", static_cast<int>(ATC3DG.m_config.agcMode), ATC3DG.m_config.transmitterIDRunning);
+
+    // printf("Maximum Range           = %6.2f\n", ATC3DG.m_config.maximumRange);
+    // printf("Measurement Rate        = %10.6f\n", ATC3DG.m_config.measurementRate);
+    // printf("Metric Mode             = %d\n", ATC3DG.m_config.metric);
+    // printf("Line Frequency          = %6.2f\n", ATC3DG.m_config.powerLineFrequency);
+    spdlog::info("Range: {}, Rate: {}, Metric: {}, Line: {}",
+                 ATC3DG.m_config.maximumRange, ATC3DG.m_config.measurementRate,
+                 ATC3DG.m_config.metric, ATC3DG.m_config.powerLineFrequency);
 
     //////////////////////////////////////////////////////////////////////////////
     //////////////////////////////////////////////////////////////////////////////
@@ -207,38 +213,44 @@ void initTxRx() {
     // together with a pointer to a buffer for the result
     // As with all procedures an error code is returned
     //
-    printf("\nCurrent System Parameters:");
-    printf("\n==========================================\n");
+    // printf("\nCurrent System Parameters:");
+    // printf("\n==========================================\n");
+    // //
+    // // SELECT_TRANSMITTER
+    // //
+    // auto SYS_TX_ID = GET_SYSTEM_PARAMETER<short>(SELECT_TRANSMITTER);
+    // // printf("SELECT_TRANSMITTER:\t\t\t%d\n", SYS_TX_ID);
+    // spdlog::info("SELECT_TRANSMITTER: {}", SYS_TX_ID);
+    // //
+    // // POWER_LINE_FREQUENCY
+    // //
+    // auto SYS_POWER_LINE_FREQUENCY = GET_SYSTEM_PARAMETER<double>(POWER_LINE_FREQUENCY);
+    // // printf("POWER_LINE_FREQUENCY:\t\t\t%5.2f\n", SYS_POWER_LINE_FREQUENCY);
+    // spdlog::info("POWER_LINE_FREQUENCY: {}", SYS_POWER_LINE_FREQUENCY);
+    // //
+    // // AGC_MODE
+    // //
+    // auto SYS_AGC_MODE = GET_SYSTEM_PARAMETER<int>(AGC_MODE);
+    // // printf("AGC_MODE:\t\t\t\t%s\n", SYS_AGC_MODE == 1 ? "SENSOR_AGC_ONLY" : "TRANSMITTER_AND_SENSOR_AGC");
+    // spdlog::info("AGC_MODE: {}", SYS_AGC_MODE == 1 ? "SENSOR_AGC_ONLY" : "TRANSMITTER_AND_SENSOR_AGC");
+    // //
+    // // MEASUREMENT_RATE
+    // //
+    // auto SYS_MEAS_RATE = GET_SYSTEM_PARAMETER<double>(MEASUREMENT_RATE);
+    // // printf("MEASUREMENT_RATE:\t\t\t%5.2f\n", SYS_MEAS_RATE);
     //
-    // SELECT_TRANSMITTER
-    //
-    auto SYS_TX_ID = GET_SYSTEM_PARAMETER<short>(SELECT_TRANSMITTER);
-    printf("SELECT_TRANSMITTER:\t\t\t%d\n", SYS_TX_ID);
-    //
-    // POWER_LINE_FREQUENCY
-    //
-    auto SYS_POWER_LINE_FREQUENCY = GET_SYSTEM_PARAMETER<double>(POWER_LINE_FREQUENCY);
-    printf("POWER_LINE_FREQUENCY:\t\t\t%5.2f\n", SYS_POWER_LINE_FREQUENCY);
-    //
-    // AGC_MODE
-    //
-    auto SYS_AGC_MODE = GET_SYSTEM_PARAMETER<int>(AGC_MODE);
-    printf("AGC_MODE:\t\t\t\t%s\n", SYS_AGC_MODE == 1 ? "SENSOR_AGC_ONLY" : "TRANSMITTER_AND_SENSOR_AGC");
-    //
-    // MEASUREMENT_RATE
-    //
-    auto SYS_MEAS_RATE = GET_SYSTEM_PARAMETER<double>(MEASUREMENT_RATE);
-    printf("MEASUREMENT_RATE:\t\t\t%5.2f\n", SYS_MEAS_RATE);
-    //
-    // MAXIMUM_RANGE
-    //
-    auto SYS_MAX_RANGE = GET_SYSTEM_PARAMETER<double>(MAXIMUM_RANGE);
-    printf("MAXIMUM_RANGE:\t\t\t\t%5.2f\n", SYS_MAX_RANGE);
-    //
-    // METRIC
-    //
-    auto SYS_METRIC = GET_SYSTEM_PARAMETER<BOOL>(METRIC);
-    printf("METRIC:\t\t\t\t\t%s\n", SYS_METRIC == 1 ? "TRUE" : "FALSE");
+    // //
+    // // MAXIMUM_RANGE
+    // //
+    // auto SYS_MAX_RANGE = GET_SYSTEM_PARAMETER<double>(MAXIMUM_RANGE);
+    // printf("MAXIMUM_RANGE:\t\t\t\t%5.2f\n", SYS_MAX_RANGE);
+    // //
+    // // METRIC
+    // //
+    // auto SYS_METRIC = GET_SYSTEM_PARAMETER<BOOL>(METRIC);
+    // printf("METRIC:\t\t\t\t\t%s\n", SYS_METRIC == 1 ? "TRUE" : "FALSE");
+
+
 
     //////////////////////////////////////////////////////////////////////////////
     //////////////////////////////////////////////////////////////////////////////
@@ -247,20 +259,27 @@ void initTxRx() {
     //	The previous calls can simplified using the macros provided in SAMPLE2.H
     //  (printf statements are provided for clarity)
     //
-    printf("\nSet System Parameters:");
-    printf("\n==========================================\n");
-    printf("SELECT_TRANSMITTER:\t\t\t0\n");
+    // printf("Set System Parameters:");
+    spdlog::info("Set System Parameters:");
+    // printf("\n==========================================\n");
+    // printf("SELECT_TRANSMITTER:\t\t\t0\n");
     SET_SYSTEM_PARAMETER(SELECT_TRANSMITTER, 0, __LINE__);
-    printf("POWER_LINE_FREQUENCY:\t\t\t50.0\n");
+    spdlog::info("SELECT_TRANSMITTER: {}", 0);
+    // printf("POWER_LINE_FREQUENCY:\t\t\t50.0\n");
     SET_SYSTEM_PARAMETER(POWER_LINE_FREQUENCY, 50.0, __LINE__);
-    printf("AGC_MODE:\t\t\t\tSENSOR_AGC_ONLY\n");
+    spdlog::info("POWER_LINE_FREQUENCY: {}", 50.0);
+    // printf("AGC_MODE:\t\t\t\tSENSOR_AGC_ONLY\n");
     SET_SYSTEM_PARAMETER(AGC_MODE, SENSOR_AGC_ONLY, __LINE__);
-    printf("MEASUREMENT_RATE:\t\t\t75.0\n");
+    spdlog::info("AGC_MODE: SENSOR_AGC_ONLY");
+    // printf("MEASUREMENT_RATE:\t\t\t75.0\n");
     SET_SYSTEM_PARAMETER(MEASUREMENT_RATE, 75.0, __LINE__);
-    printf("MAXIMUM_RANGE:\t\t\t\t72.0\n");
+    spdlog::info("MEASUREMENT RATE SET: {}",75.0);
+    // printf("MAXIMUM_RANGE:\t\t\t\t72.0\n");
     SET_SYSTEM_PARAMETER(MAXIMUM_RANGE, 72.0, __LINE__);
-    printf("METRIC:\t\t\t\t\tTRUE\n");
+    spdlog::info("MAXIMUM RANGE SET: {}",72.0);
+    // printf("METRIC:\t\t\t\t\tTRUE\n");
     SET_SYSTEM_PARAMETER(METRIC, true, __LINE__);
+    spdlog::info("METRIC SET: {}",true);
 
     //////////////////////////////////////////////////////////////////////////////
     //////////////////////////////////////////////////////////////////////////////
@@ -269,19 +288,24 @@ void initTxRx() {
     //  Restore angle align and reference frame default parameters so that
     //  the reported position is meaningful
     //
-    printf("\nSetting Defaults for Sensors");
-    printf("\n==========================================\n");
+    // printf("\nSetting Defaults for Sensors");
+    spdlog::info("Setting Defaults for Sensors");
+    // printf("\n==========================================\n");
     // initialize a structure of angles
     DOUBLE_ANGLES_RECORD anglesRecord = {0, 0, 0};
     for (sensorID = 0; sensorID < ATC3DG.m_config.numberSensors; sensorID++) {
-        printf("Sensor %d\n", sensorID);
-        printf("Data Format:\t\t\t\t12 (DOUBLE_POSITION_ANGLES)\n");
+        // printf("Sensor %d\n", sensorID);
+        spdlog::info("Sensor {}", sensorID);
+        // printf("Data Format:\t\t\t\t12 (DOUBLE_POSITION_ANGLES)\n");
         SET_SENSOR_PARAMETER(sensorID, DATA_FORMAT, DOUBLE_POSITION_ANGLES, __LINE__);
-        printf("Angle Align:\t\t\t\ta: %lf, e: %lf, r: %lf\n", anglesRecord.a, anglesRecord.e, anglesRecord.r);
+        spdlog::info("Data Format: {}", static_cast<int>(DOUBLE_POSITION_ANGLES));
+        // printf("Angle Align:\t\t\t\ta: %lf, e: %lf, r: %lf\n", );
         SET_SENSOR_PARAMETER(sensorID, ANGLE_ALIGN, anglesRecord, __LINE__);
-        printf("HEMISPHERE:\t\t\t\t0 (FRONT)");
+        spdlog::info("Angle Align: a({}), e({}), r({})", anglesRecord.a, anglesRecord.e, anglesRecord.r);
+        // printf("HEMISPHERE:\t\t\t\t0 (FRONT)");
         SET_SENSOR_PARAMETER(sensorID, HEMISPHERE, FRONT, __LINE__);
-        printf("\n=============================\n");
+        spdlog::info("HEMISPHERE: {}", static_cast<int>(FRONT));
+        // printf("\n=============================\n");
     }
 
 
@@ -466,6 +490,7 @@ DOUBLE_POSITION_ANGLES_RECORD readATI(short sensID) {
 
     return record;
 }
+
 int getConnectedSensors() {
     return ATC3DG.m_config.numberSensors;
 }
