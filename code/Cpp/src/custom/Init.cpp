@@ -432,8 +432,12 @@ public:
         dxl_comm_result = 0;
         bool notAtPosition = true;
         do {
-            // groupSyncRead.clearParam();
             // Sync read present position
+
+            groupSyncRead.clearParam();
+            for (int i = 0; i < MOTOR_CNT; i++) {
+                groupSyncRead.addParam(vMotors[i].getMotorID());
+            }
             dxl_comm_result = groupSyncRead.txRxPacket();
             if (dxl_comm_result != COMM_SUCCESS) {
                 spdlog::error("{}", packetHandler->getTxRxResult(dxl_comm_result));
