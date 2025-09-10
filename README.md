@@ -1,7 +1,7 @@
 # Heartprinter
 This is a repo for heart printer - contains documents and code
 
-### Current Motor Setup
+## Current Motor Setup
 
 Dynamixel XC430-T150BB-T: [Link](https://www.robotis.us/dynamixel-xc430-t150bb-t/)
 
@@ -11,7 +11,7 @@ Dynamixel XC430-T150BB-T: [Link](https://www.robotis.us/dynamixel-xc430-t150bb-t
       - this has all install steps for the sdk (cross-platform)
 - Dynamixel 2.0 Software for motor config: https://emanual.robotis.com/docs/en/software/dynamixel/dynamixel_wizard2/
 
-### DAQ
+## DAQ
 - NI DAQ USB6421 [Link](https://www.ni.com/en-us/support/model.usb-6421.html)
   - pinout: [Link](https://www.ni.com/docs/en-US/bundle/usb-6421/page/pinout.html)    
 - DAQmx SDK [Link](https://www.ni.com/en/support/downloads/drivers/download.ni-daq-mx.html)
