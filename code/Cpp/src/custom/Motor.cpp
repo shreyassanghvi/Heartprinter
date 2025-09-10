@@ -4,8 +4,10 @@
 #include "../../include/custom/Motor.h"
 
 #include <cstdlib>
-#include <unistd.h>
+//#include <unistd.h>
 #include <cmath>
+#define _USE_MATH_DEFINES
+#include <math.h>
 
 // #define for LED states
 #define LED_ON                          1                   // Value for LED on
