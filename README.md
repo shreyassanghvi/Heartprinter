@@ -1,7 +1,7 @@
 # Heartprinter
 This is a repo for heart printer - contains documents and code
 
-## Current Motor Setup
+## Motor
 
 Dynamixel XC430-T150BB-T: [Link](https://www.robotis.us/dynamixel-xc430-t150bb-t/)
 
