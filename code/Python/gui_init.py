@@ -6,9 +6,10 @@ from PyQt5.QtWidgets import (
     QGroupBox, QPushButton, QLineEdit, QMessageBox,
 )
 from PyQt5.QtGui import QPalette, QColor, QFont
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QTimer
 import pyqtgraph.opengl as gl
 from pyqtgraph.opengl import MeshData, GLMeshItem
+from multiprocessing import shared_memory
 
 
 def read_all_points(filename):
@@ -84,15 +85,15 @@ class MainWindow(QWidget):
 
         # Coordinates display group
         right_group = QGroupBox("Points Coordinates")
-        right_layout = QVBoxLayout()
+        self.right_layout = QVBoxLayout()
         self.point_labels_3green = []
         for i in range(3):
             lbl = QLabel("")
             lbl.setAlignment(Qt.AlignCenter)
             self.point_labels_3green.append(lbl)
-            right_layout.addWidget(lbl)
+            self.right_layout.addWidget(lbl)
 
-        right_group.setLayout(right_layout)
+        right_group.setLayout(self.right_layout)
         right_panel.addWidget(right_group)
 
         # Jog Controls Group (arrows + WASD + Z + / -)
@@ -109,7 +110,6 @@ class MainWindow(QWidget):
         home_button = QPushButton("Home")
         home_button.clicked.connect(self.home_to_centroid)
 
-        # New buttons for Z axis
         btn_z_plus = QPushButton("+")
         btn_z_plus.clicked.connect(lambda: self.jog_axis(2, 1))  # Z +
         btn_z_minus = QPushButton("−")
@@ -120,7 +120,6 @@ class MainWindow(QWidget):
         jog_layout.addWidget(btn_right, 1, 2)
         jog_layout.addWidget(btn_down, 1, 1)
         jog_layout.addWidget(home_button, 2, 1)
-        # Place Z buttons below the arrow keys
         jog_layout.addWidget(btn_z_plus, 2, 0)
         jog_layout.addWidget(btn_z_minus, 2, 2)
 
@@ -131,14 +130,13 @@ class MainWindow(QWidget):
         input_group = QGroupBox("Target Position Input")
         input_layout = QGridLayout()
         self.inputs = {}
-        self.current_pos_labels = {}  # To hold red labels for current pos coordinates
+        self.current_pos_labels = {}
 
         for i, axis in enumerate(['X', 'Y', 'Z']):
             axis_label = QLabel(axis)
             axis_label.setAlignment(Qt.AlignCenter)
             axis_label.setFixedWidth(10)
 
-            # Current position label (red, centered)
             curr_label = QLabel("0.000")
             curr_label.setAlignment(Qt.AlignCenter)
             palette = curr_label.palette()
@@ -148,14 +146,12 @@ class MainWindow(QWidget):
             font.setBold(True)
             curr_label.setFont(font)
 
-            # Arrow label (unicode right arrow)
             arrow_label = QLabel("←")
             arrow_label.setAlignment(Qt.AlignCenter)
             arrow_font = QFont()
             arrow_font.setPointSize(14)
             arrow_font.setBold(True)
             arrow_label.setFont(arrow_font)
-            # arrow_label.setFixedWidth(20)
 
             edit = QLineEdit()
             edit.setFixedWidth(50)
@@ -175,21 +171,21 @@ class MainWindow(QWidget):
         input_group.setLayout(input_layout)
         right_panel.addWidget(input_group)
 
-        # **Move buttons placed here, BELOW the input fields group**
         buttons_layout = QHBoxLayout()
-
         self.move_button = QPushButton("Move to Position")
         self.move_button.clicked.connect(self.move_to_position)
-
         buttons_layout.addWidget(self.move_button)
-        right_panel.addLayout(buttons_layout)  # Add buttons directly to right_panel layout
+        right_panel.addLayout(buttons_layout)
+
+        # Status Label for shared memory status
+        self.status_label = QLabel("Status: Unknown")
+        self.status_label.setAlignment(Qt.AlignCenter)
+        right_panel.addWidget(self.status_label)
 
         right_panel.addStretch()
-
         main_layout.addLayout(right_panel, stretch=0)
 
         self.setLayout(main_layout)
-
 
         # Load points
         self.current_pos = None
@@ -198,7 +194,7 @@ class MainWindow(QWidget):
 
         pts = read_all_points('input.txt')
         if pts is None or len(pts) < 4:
-            self.show_error_and_exit("Input file must contain at least 4 valid points.")
+            show_error_and_exit(self, "Input file must contain at least 4 valid points.")
         else:
             self.points = pts[:3]
             self.fourth_point = pts[3]
@@ -211,7 +207,7 @@ class MainWindow(QWidget):
 
             lbl_colon = QLabel(":")
             lbl_colon.setAlignment(Qt.AlignCenter)
-            lbl_colon.setFixedWidth(10)   # Reserve space for colon alignment
+            lbl_colon.setFixedWidth(10)
             colon_font = QFont()
             colon_font.setBold(True)
             lbl_colon.setFont(colon_font)
@@ -223,38 +219,28 @@ class MainWindow(QWidget):
             coord_grid_layout.addWidget(lbl_colon, i, 1)
             coord_grid_layout.addWidget(lbl_coord, i, 2)
 
-        # Remove old individual labels if added to layout
-        # Then add this grid layout to your coordinates group layout (right_layout)
+        for i in reversed(range(self.right_layout.count())):
+            self.right_layout.itemAt(i).widget().setParent(None)
 
-        # Clear right_layout before adding:
-        for i in reversed(range(right_layout.count())):
-            right_layout.itemAt(i).widget().setParent(None)
-
-        # Add new grid layout widget inside coordinates group
         wrapper_widget = QWidget()
         wrapper_widget.setLayout(coord_grid_layout)
-        right_layout.addWidget(wrapper_widget)
+        self.right_layout.addWidget(wrapper_widget)
 
         self.current_pos = self.fourth_point.copy()
-        # Target position is centroid of 3 green points
         self.target_pos = np.mean(self.points, axis=0)
 
-        # Add the green points scatter
         self.scatter_green = gl.GLScatterPlotItem(
             pos=self.points, size=10, color=(0, 1, 0, 1), pxMode=True)
         self.view.addItem(self.scatter_green)
 
-        # Add red point (4th) scatter
         self.scatter_red = gl.GLScatterPlotItem(
             pos=np.array([self.current_pos]), size=15, color=(1, 0, 0, 1), pxMode=True)
         self.view.addItem(self.scatter_red)
 
-        # Add blue target position scatter
         self.scatter_blue = gl.GLScatterPlotItem(
             pos=np.array([self.target_pos]), size=15, color=(0, 0, 1, 1), pxMode=True)
         self.view.addItem(self.scatter_blue)
 
-        # Plane mesh with edges and translucency
         meshdata, normal = compute_plane_mesh(self.points)
         self.plane_mesh = GLMeshItem(
             meshdata=meshdata,
@@ -267,15 +253,63 @@ class MainWindow(QWidget):
         )
         self.view.addItem(self.plane_mesh)
 
-        # Set initial values into input fields
         self.update_inputs_from_target()
-
         self.update_labels()
+
+        # For frame limiting: flag to track data changes
+        self._data_changed = True
+
+        # Shared memory setup for status reading
+        self.shared_mem = None
+        try:
+            self.shared_mem = shared_memory.SharedMemory(name="Local\\CPPWritePyRead")
+        except FileNotFoundError:
+            self.status_label.setText("Status: Shared memory not found")
+        except Exception:
+            self.status_label.setText("Status: Error opening shared memory")
+
+        if self.shared_mem:
+            self.status_timer = QTimer(self)
+            self.status_timer.timeout.connect(self.update_status_from_shared_memory)
+            self.status_timer.start(500)  # status update every 500 ms
+
+        # Timer for redraw with frame limiting (~30 FPS)
+        self.redraw_timer = QTimer(self)
+        self.redraw_timer.timeout.connect(self.redraw_if_needed)
+        self.redraw_timer.start(33)  # ~30 FPS
+
+    def redraw_if_needed(self):
+        if self._data_changed:
+            # Update 3D scatter plots position
+            self.scatter_red.setData(pos=np.array([self.current_pos]))
+            self.scatter_blue.setData(pos=np.array([self.target_pos]))
+            # Could update other items similarly if dynamic
+
+            self.view.update()  # Request redraw
+            self._data_changed = False
+
+    def update_status_from_shared_memory(self):
+        try:
+            buf = self.shared_mem.buf[:]  # or larger if needed
+
+            # Convert bytes to string by extracting up to null terminator
+            message_bytes = bytes(buf).split(b'\0', 1)[0]
+            message_str = message_bytes.decode('utf-8', errors='ignore')
+
+            self.status_label.setText(f"Status: {message_str}")
+        except Exception:
+            self.status_label.setText("Status: Read error")
+
+    def closeEvent(self, event):
+        if self.shared_mem:
+            self.shared_mem.close()
+            self.shared_mem = None
+        event.accept()
 
     def home_to_centroid(self):
         if self.points is not None:
             self.target_pos = np.mean(self.points, axis=0)
-            self.scatter_blue.setData(pos=np.array([self.target_pos]))
+            self._data_changed = True
             self.update_inputs_from_target()
             self.update_labels()
             self.move_to_position()
@@ -283,7 +317,7 @@ class MainWindow(QWidget):
     def move_to_position(self):
         if self.target_pos is not None:
             self.current_pos = self.target_pos.copy()
-            self.scatter_red.setData(pos=np.array([self.current_pos]))
+            self._data_changed = True
             self.update_labels()
 
     def line_edit_changed(self, axis, widget):
@@ -295,7 +329,7 @@ class MainWindow(QWidget):
             return
         idx = {'X': 0, 'Y': 1, 'Z': 2}[axis]
         self.target_pos[idx] = val
-        self.scatter_blue.setData(pos=np.array([self.target_pos]))
+        self._data_changed = True
         self.update_labels()
 
     def update_inputs_from_target(self):
@@ -309,7 +343,7 @@ class MainWindow(QWidget):
     def jog_axis(self, axis, direction):
         if self.target_pos is not None:
             self.target_pos[axis] += direction * 0.1
-            self.scatter_blue.setData(pos=np.array([self.target_pos]))
+            self._data_changed = True
             self.update_inputs_from_target()
             self.update_labels()
 
@@ -327,7 +361,7 @@ class MainWindow(QWidget):
             self.jog_axis(2, 1)
         elif key == Qt.Key_Minus:
             self.jog_axis(2, -1)
-        elif key == Qt.Key_Enter:
+        elif key == Qt.Key_Enter or key == Qt.Key_Return:
             self.move_to_position()
         elif key == Qt.Key_Z:
             self.home_to_centroid()
@@ -335,8 +369,6 @@ class MainWindow(QWidget):
             super().keyPressEvent(event)
 
     def update_labels(self):
-        # Remove old cp_str and tp_str labels if they exist
-        # Update current position red labels next to inputs
         if self.current_pos is not None:
             self.current_pos_labels['X'].setText(f"{self.current_pos[0]:.3f}")
             self.current_pos_labels['Y'].setText(f"{self.current_pos[1]:.3f}")
@@ -345,8 +377,6 @@ class MainWindow(QWidget):
             self.current_pos_labels['X'].setText("N/A")
             self.current_pos_labels['Y'].setText("N/A")
             self.current_pos_labels['Z'].setText("N/A")
-
-
 
 
 if __name__ == "__main__":

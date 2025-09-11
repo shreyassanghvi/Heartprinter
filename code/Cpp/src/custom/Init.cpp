@@ -178,7 +178,7 @@ std::shared_ptr<spdlog::logger> create_dated_logger(bool make_default) {
 }
 
 //Init commit for Control loop code
-int main(int argc, char *argv[]) {
+int main_bk(int argc, char *argv[]) {
     state = START;
     // Motor motors[MOTOR_CNT];
     std::vector<Motor> vMotors;
@@ -415,8 +415,11 @@ int main(int argc, char *argv[]) {
                 dxl_error = 0;
                 dxl_comm_result = 0;
                 do {
-                    // groupSyncRead.clearParam();
+                    groupSyncRead.clearParam();
                     // Sync read present position
+                    for (int i = 0; i < MOTOR_CNT; i++) {
+                        groupSyncRead.addParam(vMotors[i].getMotorID());
+                    }
                     dxl_comm_result = groupSyncRead.txRxPacket();
                     if (dxl_comm_result != COMM_SUCCESS) {
                         // printf("%s\n", packetHandler->getTxRxResult(dxl_comm_result));
