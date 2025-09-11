@@ -3,7 +3,7 @@
 #include <cstring>
 
 int main() {
-    const char* shmName = "Local\\CPPWritePyRead";
+    const char* shmName = "Local\\CPPToPy";
     const size_t shmSize = 1024;
 
     HANDLE hMapFile = CreateFileMapping(

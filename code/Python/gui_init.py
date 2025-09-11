@@ -259,19 +259,29 @@ class MainWindow(QWidget):
         # For frame limiting: flag to track data changes
         self._data_changed = True
 
-        # Shared memory setup for status reading
-        self.shared_mem = None
+        # Open existing C++ created shared memory (read-only from Python perspective)
         try:
-            self.shared_mem = shared_memory.SharedMemory(name="Local\\CPPWritePyRead")
+            self.read_shm = shared_memory.SharedMemory(name="Local\\CPPToPy")
         except FileNotFoundError:
-            self.status_label.setText("Status: Shared memory not found")
-        except Exception:
-            self.status_label.setText("Status: Error opening shared memory")
+            print("C++ -> Python shared memory not found")
+            self.read_shm = None
 
-        if self.shared_mem:
-            self.status_timer = QTimer(self)
-            self.status_timer.timeout.connect(self.update_status_from_shared_memory)
-            self.status_timer.start(500)  # status update every 500 ms
+        if self.read_shm:
+            self.read_timer = QTimer(self)
+            self.read_timer.timeout.connect(self.read_from_cpp)
+            self.read_timer.start(500)  # 500ms poll
+
+        # Create Python -> C++ shared memory for writing
+        try:
+            self.write_shm = shared_memory.SharedMemory(name="Local\\PyToCPP", create=True, size=1024)
+            self.write_shm.buf[:] = b'\0' * 1024
+        except FileExistsError:
+            self.write_shm = shared_memory.SharedMemory(name="Local\\PyToCPP")
+
+
+        self.status_timer = QTimer(self)
+        self.status_timer.timeout.connect(self.update_status_from_shared_memory)
+        self.status_timer.start(500)  # status update every 500 ms
 
         # Timer for redraw with frame limiting (~30 FPS)
         self.redraw_timer = QTimer(self)
@@ -288,6 +298,17 @@ class MainWindow(QWidget):
             self.view.update()  # Request redraw
             self._data_changed = False
 
+    def write_to_cpp(self):
+        if not self.write_shm:
+            return
+        try:
+            # Example data: send target position
+            data_str = f"{self.target_pos[0]:.3f},{self.target_pos[1]:.3f},{self.target_pos[2]:.3f}"
+            data_bytes = data_str.encode('utf-8')[:1023] + b'\0'
+            self.write_shm.buf[:len(data_bytes)] = data_bytes
+        except Exception as e:
+            print(f"Write error: {e}")
+
     def update_status_from_shared_memory(self):
         try:
             buf = self.shared_mem.buf[:]  # or larger if needed
@@ -301,9 +322,16 @@ class MainWindow(QWidget):
             self.status_label.setText("Status: Read error")
 
     def closeEvent(self, event):
-        if self.shared_mem:
-            self.shared_mem.close()
-            self.shared_mem = None
+        if self.read_shm:
+            self.read_shm.close()
+            self.read_shm = None
+        if self.write_shm:
+            self.write_shm.close()
+            try:
+                self.write_shm.unlink()
+            except FileNotFoundError:
+                pass
+            self.write_shm = None
         event.accept()
 
     def home_to_centroid(self):
@@ -316,6 +344,7 @@ class MainWindow(QWidget):
 
     def move_to_position(self):
         if self.target_pos is not None:
+            self.write_to_cpp()
             self.current_pos = self.target_pos.copy()
             self._data_changed = True
             self.update_labels()
