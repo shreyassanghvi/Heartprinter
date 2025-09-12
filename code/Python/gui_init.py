@@ -12,6 +12,19 @@ from pyqtgraph.opengl import MeshData, GLMeshItem
 from multiprocessing import shared_memory
 
 def read_all_points(filename):
+    """
+    Read 3D coordinate points from a text file.
+    
+    Expects a file with lines containing X, Y, Z coordinates separated by spaces or commas.
+    Reads up to 4 points maximum for this application.
+    
+    Args:
+        filename (str): Path to the input file containing coordinate data
+        
+    Returns:
+        numpy.ndarray or None: Array of shape (4, 3) containing [x, y, z] coordinates
+                              for each point
+    """
     points = []
     if os.path.exists(filename):
         with open(filename, 'r') as f:
@@ -32,20 +45,54 @@ def read_all_points(filename):
         return None
 
 def compute_plane_mesh(points):
+    """
+    Generate a 3D mesh representation of a plane defined by three points.
+    
+    Takes the first 3 points to define a plane, then creates a rectangular mesh
+    grid that can be rendered in 3D. The mesh extends slightly beyond the
+    triangle formed by the 3 points for better visualization.
+    
+    Args:
+        points (numpy.ndarray): Array of shape (3, 3) containing 3 points that define the plane
+                               Each point is [x, y, z] coordinates
+    
+    Returns:
+        tuple: (MeshData, normal_vector)
+            - MeshData: PyQtGraph mesh object ready for 3D rendering
+            - normal_vector: Unit vector perpendicular to the plane surface
+            
+    Mathematical approach:
+        1. Create two edge vectors from the 3 points
+        2. Calculate plane normal using cross product
+        3. Create orthonormal basis vectors for the plane
+        4. Generate a rectangular grid of vertices in the plane
+        5. Create triangular faces connecting the vertices
+    """
     p0, p1, p2 = points[0], points[1], points[2]
+    # Create two vectors along the edges of the triangle, forming a plane
     v1 = p1 - p0
     v2 = p2 - p0
+
+    # Find vector normal to the plane 
     normal = np.cross(v1, v2)
     normal /= np.linalg.norm(normal)
+
+    # Create orthonormal basis vectors for the plane surface 
     v1_norm = v1 / np.linalg.norm(v1)
     v2_proj = v2 - np.dot(v2, v1_norm) * v1_norm
     v2_norm = v2_proj / np.linalg.norm(v2_proj)
+
+    # Create grid for mesh visualization 
     n_grid = 20
     s1 = np.linspace(0, np.linalg.norm(v1) * 1.1, n_grid)
     s2 = np.linspace(0, np.linalg.norm(v2_proj) * 1.1, n_grid)
+    # Create 2D meshgrid and flatten for vertex calculation
     S1, S2 = np.meshgrid(s1, s2)
+    # Calculate 3D vertex positions: start at p0, then move along basis vectors
     vertices = p0 + np.outer(S1.flatten(), v1_norm) + np.outer(S2.flatten(), v2_norm)
     vertices = vertices.reshape(-1, 3)
+
+    # Create triangular faces connecting the grid vertices
     faces = []
     for i in range(n_grid - 1):
         for j in range(n_grid - 1):
@@ -66,16 +113,45 @@ def show_error_and_exit(self, message):
     dlg.exec_()
 
 class MainWindow(QWidget):
+    """
+    Main application window for 3D plane and point visualization.
+    
+    This class creates the primary user interface with:
+    - Left panel: 3D OpenGL visualization of points and plane
+    - Right panel: Control interface with coordinate display, jog controls, and input fields
+    
+    The application manages three types of points:
+    - Green points (3): Fixed reference points that define a plane
+    - Red point (1): Current actual position (moveable)  
+    - Blue point (1): Target position (where user wants to move)
+    
+    User can control the target position via:
+    - Jog buttons (incremental movement)
+    - Keyboard shortcuts (WASD + Z/+/-)
+    - Direct coordinate input
+    - Home button (move to centroid of reference points)
+    """
     def __init__(self):
+        """
+        Initialize the main window and set up the complete user interface.
+        
+        Creates the layout, loads point data from file, initializes the 3D visualization,
+        and sets up all control widgets. Also handles initial positioning and display updates.
+        
+        Raises:
+            SystemExit: If input file doesn't contain 4 valid points
+        """
         super().__init__()
         self.setWindowTitle("Plane & Points Visualization with Joystick & Input")
         self.resize(1280, 720)
 
+        # === LEFT PANEL: 3D VISUALIZATION ===
         main_layout = QHBoxLayout(self)
         self.view = gl.GLViewWidget()
         self.view.setCameraPosition(distance=10, azimuth=270)
         main_layout.addWidget(self.view, stretch=2)
 
+        # === RIGHT PANEL: CONTROL INTERFACE ===
         right_panel = QVBoxLayout()
 
         right_group = QGroupBox("Points Coordinates")
@@ -175,6 +251,7 @@ class MainWindow(QWidget):
         right_panel.addStretch()
         main_layout.addLayout(right_panel, stretch=0)
 
+        # === INITIALIZE APPLICATION DATA ===
         self.setLayout(main_layout)
 
         # Load points
@@ -212,18 +289,20 @@ class MainWindow(QWidget):
         self.current_pos = self.fourth_point.copy()
         self.target_pos = np.mean(self.points, axis=0)
 
+        # === CREATE 3D VISUALIZATION OBJECTS ===
+        # Green scatter plot for 3 reference points
         self.scatter_green = gl.GLScatterPlotItem(
             pos=self.points, size=10, color=(0, 1, 0, 1), pxMode=True)
         self.view.addItem(self.scatter_green)
-
+        # Red scatter plot for current position (moveable point)
         self.scatter_red = gl.GLScatterPlotItem(
             pos=np.array([self.current_pos]), size=15, color=(1, 0, 0, 1), pxMode=True)
         self.view.addItem(self.scatter_red)
-
+        # Blue scatter plot for target position  
         self.scatter_blue = gl.GLScatterPlotItem(
             pos=np.array([self.target_pos]), size=15, color=(0, 0, 1, 1), pxMode=True)
         self.view.addItem(self.scatter_blue)
-
+        # Semi-transparent plane mesh through the 3 reference points
         meshdata, normal = compute_plane_mesh(self.points)
         self.plane_mesh = GLMeshItem(
             meshdata=meshdata,
@@ -235,7 +314,7 @@ class MainWindow(QWidget):
             glOptions='additive'
         )
         self.view.addItem(self.plane_mesh)
-
+        # Initialize UI with current values
         self.update_inputs_from_target()
         self.update_labels()
         self._data_changed = True
@@ -251,11 +330,11 @@ class MainWindow(QWidget):
             self.write_shm.buf[:] = b'\0' * 1024
         except FileExistsError:
             self.write_shm = shared_memory.SharedMemory(name="Local\\PyToCPP")
-
+        # Timer to read position/status updates from C++ via shared memory
         self.status_timer = QTimer(self)
         self.status_timer.timeout.connect(self.update_status_from_shared_memory)
         self.status_timer.start(100)  # status update every 500 ms
-
+        # Timer to update the 3D visualization 
         self.redraw_timer = QTimer(self)
         self.redraw_timer.timeout.connect(self.redraw_if_needed)
         self.redraw_timer.start(33)  # ~30 FPS
@@ -324,10 +403,6 @@ class MainWindow(QWidget):
             self.status_value_label.setText("Shared memory closed, please reconnect")
             self.status_value_label.setStyleSheet("color: red;")
 
-
-
-
-
     def closeEvent(self, event):
         if self.read_shm:
             self.read_shm.close()
@@ -342,6 +417,20 @@ class MainWindow(QWidget):
         event.accept()
 
     def home_to_centroid(self):
+        """
+        Set target position to the centroid (geometric center) of the 3 reference points.
+        
+        This provides a "home" or neutral position that's equidistant from all 3 reference
+        points and lies in the center of the defined plane. Updates the visualization,
+        input fields, and labels, then immediately moves to that position.
+        
+        Side effects:
+            - Updates target_pos to centroid coordinates
+            - Moves blue target point in 3D view
+            - Updates input field values
+            - Refreshes all display labels  
+            - Executes move to new target position
+        """
         if self.points is not None:
             self.target_pos = np.mean(self.points, axis=0)
             self._data_changed = True
@@ -350,6 +439,18 @@ class MainWindow(QWidget):
             self.move_to_position()
 
     def move_to_position(self):
+        """
+        Execute movement: set current position to match target position.
+        
+        This simulates the actual movement command - it updates the current position
+        (red point) to match the target position (blue point). In a real control system,
+        this would send commands to motors or actuators.
+        
+        Side effects:
+            - Copies target_pos coordinates to current_pos
+            - Moves red point in 3D visualization to target location
+            - Updates position display labels
+        """
         if self.target_pos is not None:
             self.write_to_cpp()
             self.current_pos = self.target_pos.copy()
@@ -357,6 +458,24 @@ class MainWindow(QWidget):
             self.update_labels()
 
     def line_edit_changed(self, axis, widget):
+        """
+        Handle changes to coordinate input fields.
+        
+        Called when user finishes editing a coordinate input field (X, Y, or Z).
+        Validates the input, updates the target position, and refreshes the visualization.
+        Shows error dialog for invalid input and reverts to previous value.
+        
+        Args:
+            axis (str): Which axis was changed ('X', 'Y', or 'Z')
+            widget (QLineEdit): The input field widget that was modified
+            
+        Side effects:
+            - Updates target_pos coordinate for specified axis
+            - Moves blue target point in 3D view
+            - Updates display labels
+            - Shows error dialog for invalid input
+            - Reverts input field on error
+        """
         try:
             val = float(widget.text())
         except ValueError:
@@ -369,6 +488,16 @@ class MainWindow(QWidget):
         self.update_labels()
 
     def update_inputs_from_target(self):
+        """
+        Update coordinate input fields to match current target position.
+        
+        Fills the X, Y, Z input fields with the current target position coordinates.
+        Temporarily blocks signals to prevent triggering change handlers during update.
+        
+        Side effects:
+            - Updates text in all three coordinate input fields
+            - Formats coordinates to 3 decimal places
+        """
         for axis in ['X', 'Y', 'Z']:
             idx = {'X': 0, 'Y': 1, 'Z': 2}[axis]
             val = self.target_pos[idx]
@@ -377,6 +506,22 @@ class MainWindow(QWidget):
             self.inputs[axis].blockSignals(False)
 
     def jog_axis(self, axis, direction):
+        """
+        Perform incremental movement (jogging) along a specified axis.
+        
+        Moves the target position by a fixed increment (0.1 units) in the specified
+        direction along the specified axis. This provides fine control for positioning.
+        
+        Args:
+            axis (int): Axis to move along (0=X, 1=Y, 2=Z)
+            direction (int): Direction to move (-1=negative, +1=positive)
+            
+        Side effects:
+            - Updates target_pos coordinate by 0.1 units in specified direction
+            - Moves blue target point in 3D view
+            - Updates input fields with new target coordinates
+            - Updates display labels
+        """
         if self.target_pos is not None:
             self.target_pos[axis] += direction * 0.1
             self._data_changed = True
@@ -384,6 +529,23 @@ class MainWindow(QWidget):
             self.update_labels()
 
     def keyPressEvent(self, event):
+        """
+        Handle keyboard input for joystick-style control.
+        
+        Provides keyboard shortcuts for common operations:
+        - W/S: Move along Y axis (forward/backward)
+        - A/D: Move along X axis (left/right)  
+        - +/-: Move along Z axis (up/down)
+        - Enter: Execute move to target position
+        - Z: Home to centroid position
+        
+        Args:
+            event (QKeyEvent): Keyboard event containing key information
+            
+        Side effects:
+            - Calls appropriate movement or action methods based on key pressed
+            - Falls back to parent class handling for unrecognized keys
+        """
         key = event.key()
         if key == Qt.Key_W:
             self.jog_axis(1, 1)
@@ -405,6 +567,18 @@ class MainWindow(QWidget):
             super().keyPressEvent(event)
 
     def update_labels(self):
+        """
+        Update all position display labels with current coordinate values.
+        
+        Refreshes the red current position labels that appear next to each input field.
+        Shows current X, Y, Z coordinates formatted to 3 decimal places, or "N/A"
+        if position data is not available.
+        
+        Side effects:
+            - Updates text in current position labels for X, Y, Z axes
+            - Formats coordinates to 3 decimal places
+            - Shows "N/A" if current_pos is None
+        """
         if self.current_pos is not None:
             self.current_pos_labels['X'].setText(f"{self.current_pos[0]:.3f}")
             self.current_pos_labels['Y'].setText(f"{self.current_pos[1]:.3f}")
@@ -415,6 +589,13 @@ class MainWindow(QWidget):
             self.current_pos_labels['Z'].setText("N/A")
 
 if __name__ == "__main__":
+    """
+    Application entry point.
+    
+    Creates the PyQt5 application, instantiates the main window, shows it,
+    and starts the event loop. The application will run until the user closes
+    the window or an error forces exit.
+    """
     app = QApplication(sys.argv)
     w = MainWindow()
     w.show()
