@@ -2,11 +2,36 @@
 #include <iostream>
 #include <cstring>
 
-int main() {
+HANDLE g_hMapFile = NULL;
+void* g_pBuf = NULL;
+
+BOOL WINAPI ConsoleHandler(DWORD signal) {
+    if (signal == CTRL_C_EVENT || signal == CTRL_CLOSE_EVENT || signal == CTRL_BREAK_EVENT) {
+        if (g_pBuf) {
+            UnmapViewOfFile(g_pBuf);
+            g_pBuf = NULL;
+        }
+        if (g_hMapFile) {
+            CloseHandle(g_hMapFile);
+            g_hMapFile = NULL;
+        }
+        std::cout << "\nCleaned up shared memory handles on signal.\n";
+        ExitProcess(0);
+    }
+    return FALSE;
+}
+
+int main_bk() {
     const char* shmName = "Local\\CPPToPy";
     const size_t shmSize = 1024;
 
-    HANDLE hMapFile = CreateFileMapping(
+    // Register console control handler
+    if (!SetConsoleCtrlHandler(ConsoleHandler, TRUE)) {
+        std::cerr << "Could not set control handler" << std::endl;
+        return 1;
+    }
+
+    g_hMapFile = CreateFileMapping(
         INVALID_HANDLE_VALUE,
         NULL,
         PAGE_READWRITE,
@@ -14,46 +39,49 @@ int main() {
         (DWORD)shmSize,
         shmName);
 
-    if (hMapFile == NULL) {
+    if (g_hMapFile == NULL) {
         std::cerr << "CreateFileMapping failed: " << GetLastError() << std::endl;
         return 1;
     }
 
-    void* pBuf = MapViewOfFile(
-        hMapFile,
+    g_pBuf = MapViewOfFile(
+        g_hMapFile,
         FILE_MAP_ALL_ACCESS,
         0,
         0,
         shmSize);
 
-    if (pBuf == NULL) {
+    if (g_pBuf == NULL) {
         std::cerr << "MapViewOfFile failed: " << GetLastError() << std::endl;
-        CloseHandle(hMapFile);
+        CloseHandle(g_hMapFile);
         return 1;
     }
 
-    std::cout << "Shared memory created. Enter integers to write to shared memory counter, Ctrl+C to exit." << std::endl;
+    std::cout << "Shared memory created. Enter text to write, Ctrl+C to exit." << std::endl;
 
-    while (true) {
-        std::string line;
+    try {
+        while (true) {
+            std::string line;
+            std::cout << "Enter text: ";
+            if (!std::getline(std::cin, line)) {
+                std::cout << "\nExiting..." << std::endl;
+                break;
+            }
 
-        std::cout << "Enter text: ";
-        if (!std::getline(std::cin, line)) {  // wait for full line input
-            std::cout << "\nExiting..." << std::endl;
-            break;
+            memset(g_pBuf, 0, shmSize);
+            memcpy(g_pBuf, line.c_str(), line.size() + 1);
+
+            std::cout << "Value written to shared memory: " << line << std::endl;
+            if (line == "exit") {
+                break;
+            }
         }
-
-        // Zero memory before writing
-        memset(pBuf, 0, shmSize);
-
-        // Copy user input including null terminator to shared memory
-        memcpy(pBuf, line.c_str(), line.size() + 1);
-
-        std::cout << "Value written to shared memory: " << line << std::endl;
+    } catch (const std::exception& e) {
+        ;
     }
 
-    UnmapViewOfFile(pBuf);
-    CloseHandle(hMapFile);
+    UnmapViewOfFile(g_pBuf);
+    CloseHandle(g_hMapFile);
 
     return 0;
 }

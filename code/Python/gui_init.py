@@ -11,7 +11,6 @@ import pyqtgraph.opengl as gl
 from pyqtgraph.opengl import MeshData, GLMeshItem
 from multiprocessing import shared_memory
 
-
 def read_all_points(filename):
     points = []
     if os.path.exists(filename):
@@ -31,7 +30,6 @@ def read_all_points(filename):
         return np.array(points)
     else:
         return None
-
 
 def compute_plane_mesh(points):
     p0, p1, p2 = points[0], points[1], points[2]
@@ -58,7 +56,6 @@ def compute_plane_mesh(points):
     meshdata = MeshData(vertexes=vertices, faces=faces)
     return meshdata, normal
 
-
 def show_error_and_exit(self, message):
     dlg = QMessageBox(self)
     dlg.setWindowTitle("Error")
@@ -68,7 +65,6 @@ def show_error_and_exit(self, message):
     dlg.buttonClicked.connect(lambda _: sys.exit(1))
     dlg.exec_()
 
-
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
@@ -76,45 +72,35 @@ class MainWindow(QWidget):
         self.resize(1280, 720)
 
         main_layout = QHBoxLayout(self)
-
         self.view = gl.GLViewWidget()
         self.view.setCameraPosition(distance=10, azimuth=270)
         main_layout.addWidget(self.view, stretch=2)
 
         right_panel = QVBoxLayout()
 
-        # Coordinates display group
         right_group = QGroupBox("Points Coordinates")
         self.right_layout = QVBoxLayout()
+        coord_grid_layout = QGridLayout()
         self.point_labels_3green = []
-        for i in range(3):
-            lbl = QLabel("")
-            lbl.setAlignment(Qt.AlignCenter)
-            self.point_labels_3green.append(lbl)
-            self.right_layout.addWidget(lbl)
-
         right_group.setLayout(self.right_layout)
         right_panel.addWidget(right_group)
 
-        # Jog Controls Group (arrows + WASD + Z + / -)
         jog_group = QGroupBox("Jog Controls (Joystick & WASD & Z +/-)")
         jog_layout = QGridLayout()
         btn_up = QPushButton("w")
-        btn_up.clicked.connect(lambda: self.jog_axis(1, 1))  # Y +
+        btn_up.clicked.connect(lambda: self.jog_axis(1, 1))
         btn_left = QPushButton("a")
-        btn_left.clicked.connect(lambda: self.jog_axis(0, -1))  # X -
+        btn_left.clicked.connect(lambda: self.jog_axis(0, -1))
         btn_right = QPushButton("s")
-        btn_right.clicked.connect(lambda: self.jog_axis(2, 1))  # X +
+        btn_right.clicked.connect(lambda: self.jog_axis(2, 1))
         btn_down = QPushButton("d")
-        btn_down.clicked.connect(lambda: self.jog_axis(1, -1))  # Y -
+        btn_down.clicked.connect(lambda: self.jog_axis(1, -1))
         home_button = QPushButton("Home")
         home_button.clicked.connect(self.home_to_centroid)
-
         btn_z_plus = QPushButton("+")
-        btn_z_plus.clicked.connect(lambda: self.jog_axis(2, 1))  # Z +
+        btn_z_plus.clicked.connect(lambda: self.jog_axis(2, 1))
         btn_z_minus = QPushButton("−")
-        btn_z_minus.clicked.connect(lambda: self.jog_axis(2, -1))  # Z -
-
+        btn_z_minus.clicked.connect(lambda: self.jog_axis(2, -1))
         jog_layout.addWidget(btn_up, 0, 1)
         jog_layout.addWidget(btn_left, 1, 0)
         jog_layout.addWidget(btn_right, 1, 2)
@@ -122,11 +108,9 @@ class MainWindow(QWidget):
         jog_layout.addWidget(home_button, 2, 1)
         jog_layout.addWidget(btn_z_plus, 2, 0)
         jog_layout.addWidget(btn_z_minus, 2, 2)
-
         jog_group.setLayout(jog_layout)
         right_panel.addWidget(jog_group)
 
-        # Input fields for X, Y, Z target coordinates with current position label in red between label and input
         input_group = QGroupBox("Target Position Input")
         input_layout = QGridLayout()
         self.inputs = {}
@@ -136,7 +120,6 @@ class MainWindow(QWidget):
             axis_label = QLabel(axis)
             axis_label.setAlignment(Qt.AlignCenter)
             axis_label.setFixedWidth(10)
-
             curr_label = QLabel("0.000")
             curr_label.setAlignment(Qt.AlignCenter)
             palette = curr_label.palette()
@@ -145,29 +128,24 @@ class MainWindow(QWidget):
             font = curr_label.font()
             font.setBold(True)
             curr_label.setFont(font)
-
             arrow_label = QLabel("←")
             arrow_label.setAlignment(Qt.AlignCenter)
             arrow_font = QFont()
             arrow_font.setPointSize(14)
             arrow_font.setBold(True)
             arrow_label.setFont(arrow_font)
-
             edit = QLineEdit()
             edit.setFixedWidth(50)
             edit.setAlignment(Qt.AlignCenter)
             edit.editingFinished.connect(
                 lambda ax=axis, widget=edit: self.line_edit_changed(ax, widget)
             )
-
             input_layout.addWidget(axis_label, i, 0)
             input_layout.addWidget(curr_label, i, 1)
             input_layout.addWidget(arrow_label, i, 2)
             input_layout.addWidget(edit, i, 3)
-
             self.current_pos_labels[axis] = curr_label
             self.inputs[axis] = edit
-
         input_group.setLayout(input_layout)
         right_panel.addWidget(input_group)
 
@@ -177,10 +155,22 @@ class MainWindow(QWidget):
         buttons_layout.addWidget(self.move_button)
         right_panel.addLayout(buttons_layout)
 
-        # Status Label for shared memory status
-        self.status_label = QLabel("Status: Unknown")
-        self.status_label.setAlignment(Qt.AlignCenter)
-        right_panel.addWidget(self.status_label)
+        status_layout = QHBoxLayout()
+        self.status_prefix_label = QLabel("Status:")
+        self.status_prefix_label.setStyleSheet("color: black;")
+        self.status_prefix_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.status_value_label = QLabel("Unknown")
+        self.status_value_label.setStyleSheet("color: black;")
+        self.status_value_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        status_layout.addWidget(self.status_prefix_label)
+        status_layout.addWidget(self.status_value_label)
+        right_panel.addLayout(status_layout)
+
+        # -- Retry Button Logic --
+        self.retry_button = QPushButton("Retry Shared Memory")
+        self.retry_button.clicked.connect(self.try_connect_shared_memory)
+        self.retry_button.hide()  # Start hidden unless there's an error
+        right_panel.addWidget(self.retry_button)
 
         right_panel.addStretch()
         main_layout.addLayout(right_panel, stretch=0)
@@ -199,29 +189,22 @@ class MainWindow(QWidget):
             self.points = pts[:3]
             self.fourth_point = pts[3]
         labels = ["Left", "Center", "Right"]
-
-        coord_grid_layout = QGridLayout()
         for i, p in enumerate(self.points):
             lbl_name = QLabel(labels[i])
             lbl_name.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-
             lbl_colon = QLabel(":")
             lbl_colon.setAlignment(Qt.AlignCenter)
             lbl_colon.setFixedWidth(10)
             colon_font = QFont()
             colon_font.setBold(True)
             lbl_colon.setFont(colon_font)
-
             lbl_coord = QLabel(f"({p[0]:.3f}, {p[1]:.3f}, {p[2]:.3f})")
             lbl_coord.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-
             coord_grid_layout.addWidget(lbl_name, i, 0)
             coord_grid_layout.addWidget(lbl_colon, i, 1)
             coord_grid_layout.addWidget(lbl_coord, i, 2)
-
         for i in reversed(range(self.right_layout.count())):
             self.right_layout.itemAt(i).widget().setParent(None)
-
         wrapper_widget = QWidget()
         wrapper_widget.setLayout(coord_grid_layout)
         self.right_layout.addWidget(wrapper_widget)
@@ -255,21 +238,12 @@ class MainWindow(QWidget):
 
         self.update_inputs_from_target()
         self.update_labels()
-
-        # For frame limiting: flag to track data changes
         self._data_changed = True
 
-        # Open existing C++ created shared memory (read-only from Python perspective)
-        try:
-            self.read_shm = shared_memory.SharedMemory(name="Local\\CPPToPy")
-        except FileNotFoundError:
-            print("C++ -> Python shared memory not found")
-            self.read_shm = None
-
-        if self.read_shm:
-            self.read_timer = QTimer(self)
-            self.read_timer.timeout.connect(self.read_from_cpp)
-            self.read_timer.start(500)  # 500ms poll
+        # Try shared memory -- if not found, show retry button
+        self.read_shm = None
+        self.init_read_timer = False
+        self.try_connect_shared_memory(first=True)
 
         # Create Python -> C++ shared memory for writing
         try:
@@ -278,31 +252,42 @@ class MainWindow(QWidget):
         except FileExistsError:
             self.write_shm = shared_memory.SharedMemory(name="Local\\PyToCPP")
 
-
         self.status_timer = QTimer(self)
         self.status_timer.timeout.connect(self.update_status_from_shared_memory)
-        self.status_timer.start(500)  # status update every 500 ms
+        self.status_timer.start(100)  # status update every 500 ms
 
-        # Timer for redraw with frame limiting (~30 FPS)
         self.redraw_timer = QTimer(self)
         self.redraw_timer.timeout.connect(self.redraw_if_needed)
         self.redraw_timer.start(33)  # ~30 FPS
 
+    def try_connect_shared_memory(self, first=False):
+        try:
+            self.read_shm = shared_memory.SharedMemory(name="Local\\CPPToPy")
+            self.retry_button.hide()
+            if not self.init_read_timer:
+                self.read_timer = QTimer(self)
+                self.read_timer.timeout.connect(self.update_status_from_shared_memory)
+                self.read_timer.start(500)
+                self.init_read_timer = True
+            if not first:
+                self.status_label.setText("Status: Shared memory attached!")
+        except FileNotFoundError:
+            self.read_shm = None
+            self.retry_button.show()
+            if not first:
+                QMessageBox.warning(self, "Shared Memory", "Shared memory segment not found. Please ensure C++ process is running and retry.")
+
     def redraw_if_needed(self):
         if self._data_changed:
-            # Update 3D scatter plots position
             self.scatter_red.setData(pos=np.array([self.current_pos]))
             self.scatter_blue.setData(pos=np.array([self.target_pos]))
-            # Could update other items similarly if dynamic
-
-            self.view.update()  # Request redraw
+            self.view.update()
             self._data_changed = False
 
     def write_to_cpp(self):
         if not self.write_shm:
             return
         try:
-            # Example data: send target position
             data_str = f"{self.target_pos[0]:.3f},{self.target_pos[1]:.3f},{self.target_pos[2]:.3f}"
             data_bytes = data_str.encode('utf-8')[:1023] + b'\0'
             self.write_shm.buf[:len(data_bytes)] = data_bytes
@@ -311,15 +296,37 @@ class MainWindow(QWidget):
 
     def update_status_from_shared_memory(self):
         try:
-            buf = self.shared_mem.buf[:]  # or larger if needed
+            if self.read_shm:
+                buf = self.read_shm.buf[:]
+                message_bytes = bytes(buf).split(b'\0', 1)[0]
+                message_str = message_bytes.decode('utf-8', errors='ignore').strip()
 
-            # Convert bytes to string by extracting up to null terminator
-            message_bytes = bytes(buf).split(b'\0', 1)[0]
-            message_str = message_bytes.decode('utf-8', errors='ignore')
-
-            self.status_label.setText(f"Status: {message_str}")
+                if message_str == "exit":
+                    self.read_shm.close()
+                    self.read_shm = None
+                    self.status_value_label.setText("Shared memory closed by C++ (exit)")
+                    self.status_value_label.setStyleSheet("color: red;")
+                    self.retry_button.show()
+                    return
+                elif len(message_str) == 0:
+                    self.status_value_label.setText("N/A")
+                    self.status_value_label.setStyleSheet("color: red;")
+                else:
+                    self.status_value_label.setText(message_str)
+                    self.status_value_label.setStyleSheet("color: black;")
+                self.retry_button.hide()
+            else:
+                self.retry_button.show()
+                self.status_value_label.setText("Shared memory missing, please reconnect")
+                self.status_value_label.setStyleSheet("color: red;")
         except Exception:
-            self.status_label.setText("Status: Read error")
+            self.retry_button.show()
+            self.status_value_label.setText("Shared memory closed, please reconnect")
+            self.status_value_label.setStyleSheet("color: red;")
+
+
+
+
 
     def closeEvent(self, event):
         if self.read_shm:
@@ -406,7 +413,6 @@ class MainWindow(QWidget):
             self.current_pos_labels['X'].setText("N/A")
             self.current_pos_labels['Y'].setText("N/A")
             self.current_pos_labels['Z'].setText("N/A")
-
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

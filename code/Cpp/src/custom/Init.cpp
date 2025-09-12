@@ -178,7 +178,7 @@ std::shared_ptr<spdlog::logger> create_dated_logger(bool make_default) {
 }
 
 //Init commit for Control loop code
-int main_bk(int argc, char *argv[]) {
+int main(int argc, char *argv[]) {
     state = START;
     // Motor motors[MOTOR_CNT];
     std::vector<Motor> vMotors;
