@@ -17,7 +17,37 @@
 #include <sstream>
 #include <iostream>
 
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+#endif
+
 namespace fs = std::filesystem;
+
+// Shared memory structure for motor commands
+struct MotorCommand {
+    double target_x;
+    double target_y; 
+    double target_z;
+    int motor_positions[3];
+    bool use_positions;  // If true, use motor_positions directly; if false, calculate from target_xyz
+    bool enabled;
+    char padding[7]; // Ensure struct size is multiple of 8
+};
+
+// Global shared memory variables
+#ifdef _WIN32
+HANDLE hMapFile = NULL;
+#else
+int shm_fd = -1;
+#endif
+MotorCommand* pSharedData = nullptr;
+const char* SHM_NAME = "Local\\PyToCPP_Motors";
+const size_t SHM_SIZE = sizeof(MotorCommand);
 // #define for various definitions for the DYNAMIXEL
 #define PROTOCOL_VERSION                2.0                 // See which protocol version is used in the DYNAMIXEL
 // #define DEVICENAME                      "COM4"      // ex) Windows: "COM1"   Linux: "/dev/ttyUSB0" Mac: "/dev/tty.usbserial-*"
@@ -130,6 +160,86 @@ void DataHandler(double *data, uInt32 numSamples) {
 void ErrorHandlerDAQ(const char *errorMessage) {
     spdlog::error("DAQ Error: {}", errorMessage);
     state = ERR;
+}
+
+// Initialize shared memory for reading motor commands
+bool initSharedMemory() {
+#ifdef _WIN32
+    // Windows implementation
+    hMapFile = OpenFileMapping(
+        FILE_MAP_READ,
+        FALSE,
+        SHM_NAME);
+    
+    if (hMapFile == NULL) {
+        spdlog::warn("Shared memory not found, motor commands will use trackstar data only");
+        return false;
+    }
+    
+    pSharedData = (MotorCommand*)MapViewOfFile(
+        hMapFile,
+        FILE_MAP_READ,
+        0,
+        0,
+        SHM_SIZE);
+    
+    if (pSharedData == NULL) {
+        spdlog::error("MapViewOfFile failed: {}", GetLastError());
+        CloseHandle(hMapFile);
+        hMapFile = NULL;
+        return false;
+    }
+#else
+    // Linux implementation
+    shm_fd = shm_open(SHM_NAME, O_RDONLY, 0666);
+    if (shm_fd == -1) {
+        spdlog::warn("Shared memory not found, motor commands will use trackstar data only");
+        return false;
+    }
+    
+    pSharedData = (MotorCommand*)mmap(0, SHM_SIZE, PROT_READ, MAP_SHARED, shm_fd, 0);
+    if (pSharedData == MAP_FAILED) {
+        spdlog::error("mmap failed");
+        close(shm_fd);
+        shm_fd = -1;
+        return false;
+    }
+#endif
+    
+    spdlog::info("Shared memory initialized successfully");
+    return true;
+}
+
+// Cleanup shared memory
+void cleanupSharedMemory() {
+    if (pSharedData != nullptr) {
+#ifdef _WIN32
+        UnmapViewOfFile(pSharedData);
+        if (hMapFile != NULL) {
+            CloseHandle(hMapFile);
+            hMapFile = NULL;
+        }
+#else
+        munmap(pSharedData, SHM_SIZE);
+        if (shm_fd != -1) {
+            close(shm_fd);
+            shm_fd = -1;
+        }
+#endif
+        pSharedData = nullptr;
+        spdlog::info("Shared memory cleaned up");
+    }
+}
+
+// Read motor command from shared memory
+bool readMotorCommand(MotorCommand& cmd) {
+    if (pSharedData == nullptr) {
+        return false;
+    }
+    
+    // Copy data atomically
+    memcpy(&cmd, pSharedData, sizeof(MotorCommand));
+    return true;
 }
 
 std::shared_ptr<spdlog::logger> create_dated_logger(bool make_default) {
@@ -282,6 +392,11 @@ int main(int argc, char *argv[]) {
                 //TODO: Initialize load cell
                 spdlog::warn("TODO: Initializing load cell...");
                 DAQStart(daqSystem.analogHandle);
+                
+                // Initialize shared memory for motor commands
+                spdlog::info("Initializing shared memory...");
+                initSharedMemory(); // Non-critical - continues even if it fails
+                
                 state = READ_TRACKSTAR;
                 break;
 
@@ -336,53 +451,90 @@ int main(int argc, char *argv[]) {
                 static const double REF_X = 0.0;
                 static const double REF_Y = 0.0;
                 static const double REF_Z = 0.0;
-
-                double dx = retRecord.x - REF_X;
-                double dy = retRecord.y - REF_Y;
-                double dz = retRecord.z - REF_Z;
-
-                // X axis (motor 0): normal logic
-                if (dx > DEADBAND) {
-                    motor_destination[0] = dxl_goal_position[1]; // forward
-                    // setLEDState(daqSystem.digitalTask, LED::LEFT_BASE, LED_ON);
-                } else if (dx < -DEADBAND) {
-                    motor_destination[0] = dxl_goal_position[0]; // backward
-                    // setLEDState(daqSystem.digitalTask, LED::LEFT_BASE, LED_ON);
+                
+                // Try to read shared memory command first
+                MotorCommand sharedCmd;
+                bool useSharedMemory = readMotorCommand(sharedCmd);
+                
+                if (useSharedMemory && sharedCmd.enabled) {
+                    // Use shared memory commands
+                    if (sharedCmd.use_positions) {
+                        // Direct motor position control
+                        for (int i = 0; i < MOTOR_CNT; i++) {
+                            motor_destination[i] = sharedCmd.motor_positions[i];
+                        }
+                        spdlog::info("SHM: Direct motor positions: [{:4d}, {:4d}, {:4d}]",
+                                   motor_destination[0], motor_destination[1], motor_destination[2]);
+                    } else {
+                        spdlog::info("SHM: Target ({:.2f}, {:.2f}, {:.2f}) -> Dest: [{:4d}, {:4d}, {:4d}]",
+                                   sharedCmd.target_x, sharedCmd.target_y, sharedCmd.target_z,
+                                   motor_destination[0], motor_destination[1], motor_destination[2]);
+                        // Calculate motor positions from target coordinates
+                        // If any of the targets are outside of the DEADBAND, we log and set message in write shared buffer
+                        //  and skip this movement
+                        if ((DEADBAND < sharedCmd.target_x < -DEADBAND) || (DEADBAND < sharedCmd.target_y < -DEADBAND) || (DEADBAND < sharedCmd.target_z < -DEADBAND)) {
+                            spdlog::warning("SHM: Target cannot be reached, outside of DEADBAND.")
+                        }
+                        
+                        // If all of the targets are inside of the DEADBAND, we can set the moves
+                        motor_destination[0] = Motor.mmToDynamixelUnits(sharedCmd.target_x);
+                        motor_destination[1] = Motor.mmToDynamixelUnits(sharedCmd.target_y);
+                        motor_destination[2] = Motor.mmToDynamixelUnits(sharedCmd.target_z);
+                        spdlog::info("Motors: Motor positions set.")
+                    }
+                    
+                    // Enable motor movement for shared memory commands
+                    state = MOVE_MOTORS;
                 } else {
-                    motor_destination[0] = (dxl_goal_position[0] + dxl_goal_position[1]) / 2; // neutral
-                    // setLEDState(daqSystem.digitalTask, LED::LEFT_BASE, LED_OFF);
+                    // Fallback to trackstar-based control (original logic)
+                    double dx = retRecord.x - REF_X;
+                    double dy = retRecord.y - REF_Y;
+                    double dz = retRecord.z - REF_Z;
+
+                    // X axis (motor 0): normal logic
+                    if (dx > DEADBAND) {
+                        motor_destination[0] = dxl_goal_position[1];
+                        setLEDState(daqSystem.digitalTask, LED::LEFT_BASE, LED_ON);
+                    } else if (dx < -DEADBAND) {
+                        motor_destination[0] = dxl_goal_position[0];
+                        setLEDState(daqSystem.digitalTask, LED::LEFT_BASE, LED_ON);
+                    } else {
+                        motor_destination[0] = (dxl_goal_position[0] + dxl_goal_position[1]) / 2;
+                        setLEDState(daqSystem.digitalTask, LED::LEFT_BASE, LED_OFF);
+                    }
+
+                    // Y axis (motor 1): INVERTED logic
+                    if (dy > DEADBAND) {
+                        motor_destination[1] = dxl_goal_position[0]; // inverted
+                        setLEDState(daqSystem.digitalTask, LED::CENTER_BASE, LED_ON);
+                    } else if (dy < -DEADBAND) {
+                        motor_destination[1] = dxl_goal_position[1]; // inverted
+                        setLEDState(daqSystem.digitalTask, LED::CENTER_BASE, LED_ON);
+                    } else {
+                        motor_destination[1] = (dxl_goal_position[0] + dxl_goal_position[1]) / 2;
+                        setLEDState(daqSystem.digitalTask, LED::CENTER_BASE, LED_OFF);
+                    }
+
+                    // Z axis (motor 2): normal logic
+                    if (dz > DEADBAND) {
+                        motor_destination[2] = dxl_goal_position[1];
+                        setLEDState(daqSystem.digitalTask, LED::RIGHT_BASE, LED_ON);
+                    } else if (dz < -DEADBAND) {
+                        motor_destination[2] = dxl_goal_position[0];
+                        setLEDState(daqSystem.digitalTask, LED::RIGHT_BASE, LED_ON);
+                    } else {
+                        motor_destination[2] = (dxl_goal_position[0] + dxl_goal_position[1]) / 2;
+                        setLEDState(daqSystem.digitalTask, LED::RIGHT_BASE, LED_OFF);
+                    }
+
+                    spdlog::info("TS: dx: {:4.2f}, dy: {:4.2f}, dz: {:4.2f} | Dest: [{:4d}, {:4d}, {:4d}]",
+                               dx, dy, dz,
+                               motor_destination[0], motor_destination[1], motor_destination[2]);
+
+                    // Keep motors disabled for trackstar mode (original behavior)
+                    spdlog::debug("Trackstar mode: MOVE_MOTORS disabled");
+                    state = READ_TRACKSTAR;
                 }
-
-                // Y axis (motor 1): INVERTED logic
-                if (dy > DEADBAND) {
-                    motor_destination[1] = dxl_goal_position[0]; // backward (inverted)
-                    setLEDState(daqSystem.digitalTask, LED::CENTER_BASE, LED_ON);
-                } else if (dy < -DEADBAND) {
-                    motor_destination[1] = dxl_goal_position[1]; // forward (inverted)
-                    setLEDState(daqSystem.digitalTask, LED::CENTER_BASE, LED_ON);
-                } else {
-                    motor_destination[1] = (dxl_goal_position[0] + dxl_goal_position[1]) / 2; // neutral
-                    setLEDState(daqSystem.digitalTask, LED::CENTER_BASE, LED_OFF);
-                }
-
-                // Z axis (motor 2): normal logic
-                if (dz > DEADBAND) {
-                    motor_destination[2] = dxl_goal_position[1]; // forward
-                    setLEDState(daqSystem.digitalTask, LED::RIGHT_BASE, LED_ON);
-                } else if (dz < -DEADBAND) {
-                    motor_destination[2] = dxl_goal_position[0]; // backward
-                    setLEDState(daqSystem.digitalTask, LED::RIGHT_BASE, LED_ON);
-                } else {
-                    motor_destination[2] = (dxl_goal_position[0] + dxl_goal_position[1]) / 2; // neutral
-                    setLEDState(daqSystem.digitalTask, LED::RIGHT_BASE, LED_OFF);
-                }
-
-                spdlog::info("dx: {:4.2f}, dy: {:4.2f}, dz: {:4.2f} | Dest: [{:4d}, {:4d}, {:4d}]",
-                             dx, dy, dz,
-                             motor_destination[0], motor_destination[1], motor_destination[2]);
-
-                spdlog::warn("State: MOVE_MOTORS disabled");
-                state = READ_TRACKSTAR;
                 break;
             }
 
@@ -486,6 +638,7 @@ int main(int argc, char *argv[]) {
 
             case CLEANUP_TRACKSTAR:
                 cleanUpAndExit();
+                cleanupSharedMemory(); // Clean up shared memory
                 if (ERR_FLG != 0) {
                     return EXIT_FAILURE;
                 }
