@@ -370,7 +370,7 @@ class MainWindow(QWidget):
                 self.read_timer.start(500)
                 self.init_read_timer = True
             if not first:
-                self.status_label.setText("Status: Shared memory attached!")
+                self.status_value_label.setText("Shared memory attached!")
         except FileNotFoundError:
             self.read_shm = None
             self.retry_button.show()
@@ -401,6 +401,8 @@ class MainWindow(QWidget):
             if self.read_shm:
                 status_data = bytes(self.read_shm.buf[:STATUS_STRUCT_SIZE])
                 status = struct.unpack(STATUS_STRUCT_FORMAT, status_data)
+                status = status[0].decode('utf-8').rstrip('\x00')
+
                 # buf = self.read_shm.buf[:]
                 # message_bytes = bytes(buf).split(b'\0', 1)[0]
                 # message_str = message_bytes.decode('utf-8', errors='ignore').strip()

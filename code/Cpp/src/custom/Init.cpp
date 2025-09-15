@@ -235,7 +235,7 @@ bool initSharedMemory() {
     
     pStatusUpdateSharedData = (StatusUpdate*)MapViewOfFile(
         hStatusUpdateMapFile,
-        FILE_MAP_READ,
+        FILE_MAP_WRITE,
         0,
         0,
         SHM_STATUS_UPDATE_SIZE);
@@ -299,7 +299,7 @@ bool writeStatusUpdate(std::string& status) {
 
 std::shared_ptr<spdlog::logger> create_dated_logger(bool make_default) {
     std::string log_dir = "../../logs/cpp";
-    std::filesystem::create_directories("log_dir");
+    std::filesystem::create_directories(log_dir);
 
     // Get current time
     auto now = std::chrono::system_clock::now();
@@ -708,7 +708,9 @@ int main(int argc, char *argv[]) {
 
     // TODO: We can probably move this loop into the state controller
     while (true) {
-        writeStatusUpdate(std::to_string(state_controller.current_state));
+        std::string s = std::to_string(state_controller.current_state);
+        // s= "Test.";
+        writeStatusUpdate(s);
         // Get latest position from trackstar
         if (state_controller.current_state != READY || !state_controller.updateCurrentPositionFromTrackstar()) {
             // Handle ERR appropriately
