@@ -284,7 +284,7 @@ bool readMotorCommand(MotorCommand& cmd) {
     return true;
 }
 
-bool writeStatusUpdate(std::string& status) {
+bool writeStatusUpdate(std::string status) {
     if (pStatusUpdateSharedData == nullptr){
         return false;
     }
