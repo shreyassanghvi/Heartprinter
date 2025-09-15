@@ -1,6 +1,7 @@
 #include <windows.h>
 #include <iostream>
 #include <cstring>
+#include <string>
 
 HANDLE g_hMapFile = NULL;
 void* g_pBuf = NULL;

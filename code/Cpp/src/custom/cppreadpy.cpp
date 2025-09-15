@@ -3,7 +3,7 @@
 #include <string>
 #include <cstring>
 
-int main() {
+int test() {
     const char* shmName = "Local\\PyToCPP";  // Must match Python write shared memory name
     const size_t shmSize = 1024;
 

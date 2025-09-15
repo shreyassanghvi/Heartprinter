@@ -17,3 +17,6 @@
 /code/Cpp/.vs/
 /.vscode/
 /.vs/
+/code/Cpp/out/
+/code/logs/
+/code/Cpp/CMakeFiles/

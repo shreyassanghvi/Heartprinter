@@ -23,7 +23,7 @@ else()
 endif()
 
 # Compiler options
-add_compile_options(-O2 -O3 -fPIC -pthread -Wall -m64 -g -Wmaybe-uninitialized)
+add_compile_options(-O3 -fPIC -pthread -Wall -m64 -g)
 
 # === Include Directories ===
 include_directories(
@@ -87,7 +87,6 @@ add_executable(${PROJECT_NAME} ${SOURCES})
 target_link_libraries(${PROJECT_NAME}
         PRIVATE
         spdlog::spdlog
-        stdc++fs
 )
 
 if(WIN32)

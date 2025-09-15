@@ -11,6 +11,27 @@ import pyqtgraph.opengl as gl
 from pyqtgraph.opengl import MeshData, GLMeshItem
 from multiprocessing import shared_memory
 
+import struct
+import time
+from dataclasses import dataclass
+
+@dataclass
+class MotorCommand:
+    target_x: float
+    target_y: float
+    target_z: float
+
+MOTOR_STRUCT_FORMAT = 'ddd7x'
+MOTOR_STRUCT_SIZE = struct.calcsize(MOTOR_STRUCT_FORMAT)
+
+@dataclass
+class HeartprinterStatus:
+    status: str
+    # TOOO: Add x,y,z coordinates
+
+STATUS_STRUCT_FORMAT = '5s3x'
+STATUS_STRUCT_SIZE = struct.calcsize(STATUS_STRUCT_FORMAT)
+
 def read_all_points(filename):
     """
     Read 3D coordinate points from a text file.
@@ -326,8 +347,8 @@ class MainWindow(QWidget):
 
         # Create Python -> C++ shared memory for writing
         try:
-            self.write_shm = shared_memory.SharedMemory(name="Local\\PyToCPP", create=True, size=1024)
-            self.write_shm.buf[:] = b'\0' * 1024
+            self.write_shm = shared_memory.SharedMemory(name="Local\\PyToCPP", create=True, size=MOTOR_STRUCT_SIZE)
+            # self.write_shm.buf[:] = b'\0' * 1024
         except FileExistsError:
             self.write_shm = shared_memory.SharedMemory(name="Local\\PyToCPP")
         # Timer to read position/status updates from C++ via shared memory
@@ -341,7 +362,7 @@ class MainWindow(QWidget):
 
     def try_connect_shared_memory(self, first=False):
         try:
-            self.read_shm = shared_memory.SharedMemory(name="Local\\CPPToPy")
+            self.read_shm = shared_memory.SharedMemory(name="Local\\CPPToPy", create=True, size=STATUS_STRUCT_SIZE)
             self.retry_button.hide()
             if not self.init_read_timer:
                 self.read_timer = QTimer(self)
@@ -367,31 +388,35 @@ class MainWindow(QWidget):
         if not self.write_shm:
             return
         try:
-            data_str = f"{self.target_pos[0]:.3f},{self.target_pos[1]:.3f},{self.target_pos[2]:.3f}"
-            data_bytes = data_str.encode('utf-8')[:1023] + b'\0'
-            self.write_shm.buf[:len(data_bytes)] = data_bytes
+            data = struct.pack(MOTOR_STRUCT_FORMAT, self.target_pos[0], self.target_pos[1], self.target_pos[2])
+            self.write_shm.buf[:MOTOR_STRUCT_SIZE] = data
+            # data_str = f"{self.target_pos[0]:.3f},{self.target_pos[1]:.3f},{self.target_pos[2]:.3f}"
+            # data_bytes = data_str.encode('utf-8')[:1023] + b'\0'
+            # self.write_shm.buf[:len(data_bytes)] = data_bytes
         except Exception as e:
             print(f"Write error: {e}")
 
     def update_status_from_shared_memory(self):
         try:
             if self.read_shm:
-                buf = self.read_shm.buf[:]
-                message_bytes = bytes(buf).split(b'\0', 1)[0]
-                message_str = message_bytes.decode('utf-8', errors='ignore').strip()
+                status_data = bytes(self.read_shm.buf[:STATUS_STRUCT_SIZE])
+                status = struct.unpack(STATUS_STRUCT_FORMAT, status_data)
+                # buf = self.read_shm.buf[:]
+                # message_bytes = bytes(buf).split(b'\0', 1)[0]
+                # message_str = message_bytes.decode('utf-8', errors='ignore').strip()
 
-                if message_str == "exit":
+                if status == "exit":
                     self.read_shm.close()
                     self.read_shm = None
                     self.status_value_label.setText("Shared memory closed by C++ (exit)")
                     self.status_value_label.setStyleSheet("color: red;")
                     self.retry_button.show()
                     return
-                elif len(message_str) == 0:
+                elif len(status) == 0:
                     self.status_value_label.setText("N/A")
                     self.status_value_label.setStyleSheet("color: red;")
                 else:
-                    self.status_value_label.setText(message_str)
+                    self.status_value_label.setText(status)
                     self.status_value_label.setStyleSheet("color: black;")
                 self.retry_button.hide()
             else:
