@@ -245,10 +245,8 @@ bool initSharedMemory() {
         CloseHandle(hStatusUpdateMapFile);
         hStatusUpdateMapFile = NULL;
         return false;
-    }
+    }    
 
-    writeStatusUpdate("test.");
-    
     spdlog::info("Shared memory initialized successfully");
     return true;
 }
@@ -286,13 +284,14 @@ bool readMotorCommand(MotorCommand& cmd) {
     return true;
 }
 
-bool writeStatusUpdate(char status[6]) {
+bool writeStatusUpdate(std::string& status) {
     if (pStatusUpdateSharedData == nullptr){
         return false;
     }
 
     StatusUpdate msg;
-    msg.status = status;
+    strncpy_s(msg.status, sizeof(msg.status), status.c_str(), _TRUNCATE);
+    // msg.status = status;
     memcpy(pStatusUpdateSharedData, &msg, sizeof(StatusUpdate));
 
     return true;
@@ -709,6 +708,7 @@ int main(int argc, char *argv[]) {
 
     // TODO: We can probably move this loop into the state controller
     while (true) {
+        writeStatusUpdate(std::to_string(state_controller.current_state));
         // Get latest position from trackstar
         if (state_controller.current_state != READY || !state_controller.updateCurrentPositionFromTrackstar()) {
             // Handle ERR appropriately
