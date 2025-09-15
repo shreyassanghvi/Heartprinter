@@ -347,7 +347,7 @@ class MainWindow(QWidget):
 
         # Create Python -> C++ shared memory for writing
         try:
-            self.write_shm = shared_memory.SharedMemory(name="Local\\PyToCPP", size=MOTOR_STRUCT_SIZE)
+            self.write_shm = shared_memory.SharedMemory(name="Local\\PyToCPP", create=True, size=MOTOR_STRUCT_SIZE)
             # self.write_shm.buf[:] = b'\0' * 1024
         except FileExistsError:
             self.write_shm = shared_memory.SharedMemory(name="Local\\PyToCPP")
@@ -401,11 +401,9 @@ class MainWindow(QWidget):
             if self.read_shm:
                 status_data = bytes(self.read_shm.buf[:STATUS_STRUCT_SIZE])
                 status = struct.unpack(STATUS_STRUCT_FORMAT, status_data)
-                status = status[0].decode('utf-8').rstrip('\x00')
-
-                # buf = self.read_shm.buf[:]
-                # message_bytes = bytes(buf).split(b'\0', 1)[0]
-                # message_str = message_bytes.decode('utf-8', errors='ignore').strip()
+                status = status[0]
+                term_pos = status.find(b'\x00')
+                status = status.decode('utf-8') if term_pos == -1 else status[:term_pos].decode('utf-8')
 
                 if status == "exit":
                     self.read_shm.close()
@@ -425,7 +423,8 @@ class MainWindow(QWidget):
                 self.retry_button.show()
                 self.status_value_label.setText("Shared memory missing, please reconnect")
                 self.status_value_label.setStyleSheet("color: red;")
-        except Exception:
+        except Exception as e:
+            print(e)
             self.retry_button.show()
             self.status_value_label.setText("Shared memory closed, please reconnect")
             self.status_value_label.setStyleSheet("color: red;")

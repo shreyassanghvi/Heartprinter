@@ -290,8 +290,17 @@ bool writeStatusUpdate(std::string& status) {
     }
 
     StatusUpdate msg;
-    strncpy_s(msg.status, sizeof(msg.status), status.c_str(), _TRUNCATE);
-    // msg.status = status;
+
+    // Clear the status field first
+    memset(msg.status, 0, sizeof(msg.status));
+    
+    size_t copy_len = (std::min)(status.length(), size_t(5));
+    strncpy_s(msg.status, sizeof(msg.status), status.c_str(), copy_len);
+    msg.status[copy_len] = '\0';
+
+    // strncpy_s(msg.status, sizeof(msg.status), status.c_str(), _TRUNCATE);
+    spdlog::warn("Writing status {} to buffer", msg.status);
+    memset(msg.padding, 0, sizeof(msg.padding));
     memcpy(pStatusUpdateSharedData, &msg, sizeof(StatusUpdate));
 
     return true;
@@ -358,9 +367,16 @@ public:
     DAQSystem daqSystem;
     DOUBLE_POSITION_ANGLES_RECORD currentPosition{};
 
+    const std::vector<std::string> stateNames = {
+        "START", "INIT", "READY", "MOVE", "ERR", "CLEANUP", "END"
+    };
 
     StateController() {
         current_state = START;
+    }
+
+    std::string currentStateToString() {
+        return stateNames[current_state];
     }
 
     // These are the ideal state transitions
@@ -398,6 +414,7 @@ public:
 
         // BEGIN REGION SHAREDMEMORY INIT
         initSharedMemory();
+        writeStatusUpdate(currentStateToString());
         // END REGION SHAREDMEMORY INIT
 
         // BEGIN REGION DAQ INIT
@@ -466,11 +483,13 @@ public:
         // END REGION LOADCELL INIT
 
         current_state = READY;
+        writeStatusUpdate(currentStateToString());
         return true;
     }
 
     void handleError() {
         current_state = ERR;
+        writeStatusUpdate(currentStateToString());
         ERR_FLG = 1;
         spdlog::error("User error");
         // Do other ERR stuff if necessary
@@ -511,6 +530,7 @@ public:
         }
         else {
             current_state = END;
+            writeStatusUpdate(currentStateToString());
         }
 
         return true;
@@ -518,6 +538,7 @@ public:
 
     void setMotorPositions() {
         current_state = MOVE;
+        writeStatusUpdate(currentStateToString());
         static const double DEADBAND = 3.0;
         static const double REF_X = 0.0;
         static const double REF_Y = 0.0;
@@ -660,11 +681,14 @@ public:
         } while (notAtPosition); // Continue loop until all motors reach destination
 
         current_state = READY;
+        
+        writeStatusUpdate(currentStateToString());
         return true;
     }
 
     bool cleanUp() {
         current_state = CLEANUP;
+        writeStatusUpdate(currentStateToString());
         setAllLEDs(daqSystem.digitalTask, LED_OFF);
         DAQStop(daqSystem.analogHandle);
         cleanupDAQSystem(daqSystem);
@@ -708,9 +732,6 @@ int main(int argc, char *argv[]) {
 
     // TODO: We can probably move this loop into the state controller
     while (true) {
-        std::string s = std::to_string(state_controller.current_state);
-        // s= "Test.";
-        writeStatusUpdate(s);
         // Get latest position from trackstar
         if (state_controller.current_state != READY || !state_controller.updateCurrentPositionFromTrackstar()) {
             // Handle ERR appropriately
