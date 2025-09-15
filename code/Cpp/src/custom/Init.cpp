@@ -38,6 +38,9 @@ const size_t SHM_MOTOR_COMMAND_SIZE = sizeof(MotorCommand);
 
 // Shared memory structure for motor commands
 struct StatusUpdate {
+    double current_x;
+    double current_y;
+    double current_z;
     char status[6];
     char padding[2];
 };
@@ -284,7 +287,7 @@ bool readMotorCommand(MotorCommand& cmd) {
     return true;
 }
 
-bool writeStatusUpdate(std::string& status) {
+bool writeStatusUpdate(double x, double y, double z, std::string status) {
     if (pStatusUpdateSharedData == nullptr){
         return false;
     }
@@ -414,7 +417,7 @@ public:
 
         // BEGIN REGION SHAREDMEMORY INIT
         initSharedMemory();
-        writeStatusUpdate(currentStateToString());
+        writeStatusUpdate(currentPosition.x, currentPosition.y, currentPosition.z, currentStateToString());
         // END REGION SHAREDMEMORY INIT
 
         // BEGIN REGION DAQ INIT
@@ -483,13 +486,13 @@ public:
         // END REGION LOADCELL INIT
 
         current_state = READY;
-        writeStatusUpdate(currentStateToString());
+        writeStatusUpdate(currentPosition.x, currentPosition.y, currentPosition.z, currentStateToString());
         return true;
     }
 
     void handleError() {
         current_state = ERR;
-        writeStatusUpdate(currentStateToString());
+        writeStatusUpdate(currentPosition.x, currentPosition.y, currentPosition.z, currentStateToString());
         ERR_FLG = 1;
         spdlog::error("User error");
         // Do other ERR stuff if necessary
@@ -530,7 +533,7 @@ public:
         }
         else {
             current_state = END;
-            writeStatusUpdate(currentStateToString());
+            writeStatusUpdate(currentPosition.x, currentPosition.y, currentPosition.z, currentStateToString());
         }
 
         return true;
@@ -538,7 +541,7 @@ public:
 
     void setMotorPositions() {
         current_state = MOVE;
-        writeStatusUpdate(currentStateToString());
+        writeStatusUpdate(currentPosition.x, currentPosition.y, currentPosition.z, currentStateToString());
         static const double DEADBAND = 3.0;
         static const double REF_X = 0.0;
         static const double REF_Y = 0.0;
@@ -682,13 +685,13 @@ public:
 
         current_state = READY;
         
-        writeStatusUpdate(currentStateToString());
+        writeStatusUpdate(currentPosition.x, currentPosition.y, currentPosition.z, currentStateToString());
         return true;
     }
 
     bool cleanUp() {
         current_state = CLEANUP;
-        writeStatusUpdate(currentStateToString());
+        writeStatusUpdate(currentPosition.x, currentPosition.y, currentPosition.z, currentStateToString());
         setAllLEDs(daqSystem.digitalTask, LED_OFF);
         DAQStop(daqSystem.analogHandle);
         cleanupDAQSystem(daqSystem);

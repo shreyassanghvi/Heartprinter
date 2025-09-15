@@ -26,10 +26,13 @@ MOTOR_STRUCT_SIZE = struct.calcsize(MOTOR_STRUCT_FORMAT)
 
 @dataclass
 class HeartprinterStatus:
+    current_x: float
+    current_y: float
+    current_z: float
     status: str
     # TOOO: Add x,y,z coordinates
 
-STATUS_STRUCT_FORMAT = '6s2x'
+STATUS_STRUCT_FORMAT = 'ddd6s2x'
 STATUS_STRUCT_SIZE = struct.calcsize(STATUS_STRUCT_FORMAT)
 
 def read_all_points(filename):
@@ -400,8 +403,8 @@ class MainWindow(QWidget):
         try:
             if self.read_shm:
                 status_data = bytes(self.read_shm.buf[:STATUS_STRUCT_SIZE])
-                status = struct.unpack(STATUS_STRUCT_FORMAT, status_data)
-                status = status[0]
+                current_x, current_y, current_z, status = struct.unpack(STATUS_STRUCT_FORMAT, status_data)
+                print(f"Current X, Y, and Z: ({current_x}, {current_y}, {current_z})")
                 term_pos = status.find(b'\x00')
                 status = status.decode('utf-8') if term_pos == -1 else status[:term_pos].decode('utf-8')
 
