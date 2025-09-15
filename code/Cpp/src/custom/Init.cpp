@@ -27,14 +27,26 @@ struct MotorCommand {
     double target_x;
     double target_y; 
     double target_z;
-    char padding[7]; // Ensure struct size is multiple of 8
+    char padding[7];
 };
 
 // Global shared memory variables
-HANDLE hMapFile = NULL;
-MotorCommand* pSharedData = nullptr;
-const char* SHM_NAME = "Local\\PyToCPP";
-const size_t SHM_SIZE = sizeof(MotorCommand);
+HANDLE hMotorCommandMapFile = NULL;
+MotorCommand* pMotorCommandSharedData = nullptr;
+const char* SHM_MOTOR_COMMAND_NAME = "Local\\PyToCPP";
+const size_t SHM_MOTOR_COMMAND_SIZE = sizeof(MotorCommand);
+
+// Shared memory structure for motor commands
+struct StatusUpdate {
+    char status[6];
+    char padding[2];
+};
+
+// Global shared memory variables
+HANDLE hStatusUpdateMapFile = NULL;
+StatusUpdate* pStatusUpdateSharedData = nullptr;
+const char* SHM_STATUS_UPDATE_NAME = "Local\\CPPToPy";
+const size_t SHM_STATUS_UPDATE_SIZE = sizeof(StatusUpdate);
 
 // #define for various definitions for the DYNAMIXEL
 #define PROTOCOL_VERSION                2.0                 // See which protocol version is used in the DYNAMIXEL
@@ -153,23 +165,23 @@ void ErrorHandlerDAQ(const char *errorMessage) {
 // Initialize shared memory for reading motor commands.
 // TODO: This can definitely be cleaned up significantly.
 bool initSharedMemory() {
-    hMapFile = OpenFileMapping(
+    hMotorCommandMapFile = OpenFileMapping(
         FILE_MAP_ALL_ACCESS,
         FALSE,
-        SHM_NAME);
+        SHM_MOTOR_COMMAND_NAME);
     
-    if (hMapFile == NULL) {
+    if (hMotorCommandMapFile == NULL) {
         if(GetLastError() == 2){
             spdlog::warn("File not yet created. Creating file first.");
-             hMapFile = CreateFileMapping(
+             hMotorCommandMapFile = CreateFileMapping(
                 INVALID_HANDLE_VALUE,
                 NULL,
                 PAGE_READWRITE,
                 0,
-                SHM_SIZE,
-                SHM_NAME
+                SHM_MOTOR_COMMAND_SIZE,
+                SHM_MOTOR_COMMAND_NAME
             );
-            if (hMapFile == NULL){
+            if (hMotorCommandMapFile == NULL){
                 spdlog::warn("Failed to create file mapping");
                 spdlog::warn(GetLastError());
             }
@@ -180,17 +192,58 @@ bool initSharedMemory() {
         }
     }
     
-    pSharedData = (MotorCommand*)MapViewOfFile(
-        hMapFile,
+    pMotorCommandSharedData = (MotorCommand*)MapViewOfFile(
+        hMotorCommandMapFile,
         FILE_MAP_READ,
         0,
         0,
-        SHM_SIZE);
+        SHM_MOTOR_COMMAND_SIZE);
     
-    if (pSharedData == NULL) {
+    if (pMotorCommandSharedData == NULL) {
         spdlog::error("MapViewOfFile failed: {}", GetLastError());
-        CloseHandle(hMapFile);
-        hMapFile = NULL;
+        CloseHandle(hMotorCommandMapFile);
+        hMotorCommandMapFile = NULL;
+        return false;
+    }
+
+    hStatusUpdateMapFile = OpenFileMapping(
+        FILE_MAP_ALL_ACCESS,
+        FALSE,
+        SHM_STATUS_UPDATE_NAME);
+    
+    if (hStatusUpdateMapFile == NULL) {
+        if(GetLastError() == 2){
+            spdlog::warn("File not yet created. Creating file first.");
+             hStatusUpdateMapFile = CreateFileMapping(
+                INVALID_HANDLE_VALUE,
+                NULL,
+                PAGE_READWRITE,
+                0,
+                SHM_STATUS_UPDATE_SIZE,
+                SHM_STATUS_UPDATE_NAME
+            );
+            if (hStatusUpdateMapFile == NULL){
+                spdlog::warn("Failed to create file mapping");
+                spdlog::warn(GetLastError());
+            }
+        } else{
+            spdlog::warn("Shared memory not found, motor commands will use trackstar data only");
+            spdlog::warn(GetLastError());
+            return false;
+        }
+    }
+    
+    pStatusUpdateSharedData = (StatusUpdate*)MapViewOfFile(
+        hStatusUpdateMapFile,
+        FILE_MAP_READ,
+        0,
+        0,
+        SHM_STATUS_UPDATE_SIZE);
+    
+    if (pStatusUpdateSharedData == NULL) {
+        spdlog::error("MapViewOfFile failed: {}", GetLastError());
+        CloseHandle(hStatusUpdateMapFile);
+        hStatusUpdateMapFile = NULL;
         return false;
     }
     
@@ -200,25 +253,46 @@ bool initSharedMemory() {
 
 // Cleanup shared memory
 void cleanupSharedMemory() {
-    if (pSharedData != nullptr) {
-        UnmapViewOfFile(pSharedData);
-        if (hMapFile != NULL) {
-            CloseHandle(hMapFile);
-            hMapFile = NULL;
+    if (pMotorCommandSharedData != nullptr) {
+        UnmapViewOfFile(pMotorCommandSharedData);
+        if (hMotorCommandMapFile != NULL) {
+            CloseHandle(hMotorCommandMapFile);
+            hMotorCommandMapFile = NULL;
         }
-        pSharedData = nullptr;
+        pMotorCommandSharedData = nullptr;
+        spdlog::info("Shared memory cleaned up");
+    }
+    if (pStatusUpdateSharedData != nullptr) {
+        UnmapViewOfFile(pStatusUpdateSharedData);
+        if (hStatusUpdateMapFile != NULL) {
+            CloseHandle(hStatusUpdateMapFile);
+            hStatusUpdateMapFile = NULL;
+        }
+        pStatusUpdateSharedData = nullptr;
         spdlog::info("Shared memory cleaned up");
     }
 }
 
 // Read motor command from shared memory
 bool readMotorCommand(MotorCommand& cmd) {
-    if (pSharedData == nullptr) {
+    if (pMotorCommandSharedData == nullptr) {
         return false;
     }
     
     // Copy data atomically
-    memcpy(&cmd, pSharedData, sizeof(MotorCommand));
+    memcpy(&cmd, pMotorCommandSharedData, sizeof(MotorCommand));
+    return true;
+}
+
+bool writeStatusUpdate(char status[6]) {
+    if (pStatusUpdateSharedData == nullptr){
+        return false;
+    }
+
+    StatusUpdate msg;
+    msg.status = status;
+    memcpy(pStatusUpdateSharedData, &msg, sizeof(StatusUpdate));
+
     return true;
 }
 

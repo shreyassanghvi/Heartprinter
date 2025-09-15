@@ -29,7 +29,7 @@ class HeartprinterStatus:
     status: str
     # TOOO: Add x,y,z coordinates
 
-STATUS_STRUCT_FORMAT = '5s3x'
+STATUS_STRUCT_FORMAT = '6s2x'
 STATUS_STRUCT_SIZE = struct.calcsize(STATUS_STRUCT_FORMAT)
 
 def read_all_points(filename):
@@ -362,7 +362,7 @@ class MainWindow(QWidget):
 
     def try_connect_shared_memory(self, first=False):
         try:
-            self.read_shm = shared_memory.SharedMemory(name="Local\\CPPToPy", create=True, size=STATUS_STRUCT_SIZE)
+            self.read_shm = shared_memory.SharedMemory(name="Local\\CPPToPy", size=STATUS_STRUCT_SIZE)
             self.retry_button.hide()
             if not self.init_read_timer:
                 self.read_timer = QTimer(self)
