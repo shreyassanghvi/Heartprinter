@@ -347,7 +347,7 @@ class MainWindow(QWidget):
 
         # Create Python -> C++ shared memory for writing
         try:
-            self.write_shm = shared_memory.SharedMemory(name="Local\\PyToCPP", create=True, size=MOTOR_STRUCT_SIZE)
+            self.write_shm = shared_memory.SharedMemory(name="Local\\PyToCPP", size=MOTOR_STRUCT_SIZE)
             # self.write_shm.buf[:] = b'\0' * 1024
         except FileExistsError:
             self.write_shm = shared_memory.SharedMemory(name="Local\\PyToCPP")
