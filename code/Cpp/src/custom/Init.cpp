@@ -246,6 +246,8 @@ bool initSharedMemory() {
         hStatusUpdateMapFile = NULL;
         return false;
     }
+
+    writeStatusUpdate("test.");
     
     spdlog::info("Shared memory initialized successfully");
     return true;
