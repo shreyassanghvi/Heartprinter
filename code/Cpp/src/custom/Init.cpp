@@ -734,6 +734,11 @@ int main(int argc, char *argv[]) {
     // Initialize the state controller
     if (!state_controller.initialize()) {
         state_controller.handleError();
+        
+        MotorCommand sharedCmd;
+        bool useSharedMemory = readMotorCommand(sharedCmd);
+        spdlog::info(sharedCmd.exit);
+
         return state_controller.cleanUp();
     }
 
@@ -752,6 +757,11 @@ int main(int argc, char *argv[]) {
 
         // Calculate the motor positions from DEADBAND
         state_controller.setMotorPositions();
+
+        // End it if there was an error or we're just good to end
+        if (state_controller.current_state == END) {
+            return state_controller.cleanUp();
+        }
 
         // Try to move motors
         if (!state_controller.moveMotorPositions()) {
