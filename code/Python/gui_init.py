@@ -20,8 +20,9 @@ class MotorCommand:
     target_x: float
     target_y: float
     target_z: float
+    exit: bool
 
-MOTOR_STRUCT_FORMAT = 'ddd7x'
+MOTOR_STRUCT_FORMAT = 'ddd?6x'
 MOTOR_STRUCT_SIZE = struct.calcsize(MOTOR_STRUCT_FORMAT)
 
 @dataclass
@@ -30,7 +31,6 @@ class HeartprinterStatus:
     current_y: float
     current_z: float
     status: str
-    # TOOO: Add x,y,z coordinates
 
 STATUS_STRUCT_FORMAT = 'ddd6s2x'
 STATUS_STRUCT_SIZE = struct.calcsize(STATUS_STRUCT_FORMAT)
@@ -275,6 +275,11 @@ class MainWindow(QWidget):
         right_panel.addStretch()
         main_layout.addLayout(right_panel, stretch=0)
 
+        # -- End Button Logic --
+        self.end_button = QPushButton("End")
+        self.end_button.clicked.connect(self.move_to_position)
+        right_panel.addWidget(self.end_button)
+
         # === INITIALIZE APPLICATION DATA ===
         self.setLayout(main_layout)
 
@@ -391,11 +396,8 @@ class MainWindow(QWidget):
         if not self.write_shm:
             return
         try:
-            data = struct.pack(MOTOR_STRUCT_FORMAT, self.target_pos[0], self.target_pos[1], self.target_pos[2])
+            data = struct.pack(MOTOR_STRUCT_FORMAT, self.target_pos[0], self.target_pos[1], self.target_pos[2], (self.sender() == self.end_button))
             self.write_shm.buf[:MOTOR_STRUCT_SIZE] = data
-            # data_str = f"{self.target_pos[0]:.3f},{self.target_pos[1]:.3f},{self.target_pos[2]:.3f}"
-            # data_bytes = data_str.encode('utf-8')[:1023] + b'\0'
-            # self.write_shm.buf[:len(data_bytes)] = data_bytes
         except Exception as e:
             print(f"Write error: {e}")
 

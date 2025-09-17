@@ -27,7 +27,8 @@ struct MotorCommand {
     double target_x;
     double target_y; 
     double target_z;
-    char padding[7];
+    bool exit;
+    char padding[6];
 };
 
 // Global shared memory variables
@@ -59,7 +60,7 @@ const size_t SHM_STATUS_UPDATE_SIZE = sizeof(StatusUpdate);
 // #define BAUDRATE                        57600
 
 //user defined #define
-#define RECORD_CNT                          1000                 // Number of records to collect
+#define RECORD_CNT                          10000                 // Number of records to collect
 #define MOTOR_CNT                           3                  // Number of motors to control
 
 enum TRACKSTAR_SENSORS_ID {
@@ -543,20 +544,16 @@ public:
         current_state = MOVE;
         writeStatusUpdate(currentPosition.x, currentPosition.y, currentPosition.z, currentStateToString());
         static const double DEADBAND = 3.0;
-        static const double REF_X = 0.0;
-        static const double REF_Y = 0.0;
-        static const double REF_Z = 0.0;
 
-        double dx = currentPosition.x - REF_X;
-        double dy = currentPosition.y - REF_Y;
-        double dz = currentPosition.z - REF_Z;
-
-
-         // Try to read shared memory command first
+        // Try to read shared memory command first
         MotorCommand sharedCmd;
         bool useSharedMemory = readMotorCommand(sharedCmd);
         
         if (useSharedMemory) {
+            if(sharedCmd.exit){
+                current_state = END;
+                return;
+            }
             // Calculate motor positions from target coordinates
             // If any of the targets are outside of the DEADBAND, we log and set message in write shared buffer
             //  and skip this movement
@@ -575,6 +572,13 @@ public:
                         motor_destination[0], motor_destination[1], motor_destination[2]);
 
         } else {
+            static const double REF_X = 0.0;
+            static const double REF_Y = 0.0;
+            static const double REF_Z = 0.0;
+
+            double dx = currentPosition.x - REF_X;
+            double dy = currentPosition.y - REF_Y;
+            double dz = currentPosition.z - REF_Z;
 
             // X axis (motor 0): normal logic
             if (dx > DEADBAND) {
@@ -617,11 +621,11 @@ public:
                 motor_destination[2] = neutral_pos; // neutral
                 setLEDState(daqSystem.digitalTask, LED::RIGHT_BASE, LED_OFF);
             }
+            
+            spdlog::info("dx: {:4.2f}, dy: {:4.2f}, dz: {:4.2f} | Dest: [{:4d}, {:4d}, {:4d}]",
+                dx, dy, dz,
+                motor_destination[0], motor_destination[1], motor_destination[2]);
         }
-
-        spdlog::info("dx: {:4.2f}, dy: {:4.2f}, dz: {:4.2f} | Dest: [{:4d}, {:4d}, {:4d}]",
-            dx, dy, dz,
-            motor_destination[0], motor_destination[1], motor_destination[2]);
     }
 
     bool moveMotorPositions() {
