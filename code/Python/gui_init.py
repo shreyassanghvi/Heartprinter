@@ -275,11 +275,6 @@ class MainWindow(QWidget):
         right_panel.addStretch()
         main_layout.addLayout(right_panel, stretch=0)
 
-        # -- Demo Button Logic --
-        self.demo_button = QPushButton("Demo")
-        self.demo_button.clicked.connect(self.demo)
-        right_panel.addWidget(self.demo_button)
-
         # -- End Button Logic --
         self.end_button = QPushButton("End")
         self.end_button.clicked.connect(self.end_system)
@@ -496,27 +491,6 @@ class MainWindow(QWidget):
     def end_system(self):
         self.write_to_cpp(end_flag=True)
         self.close()
-
-    def demo(self):
-        points_to_demo = [
-            [1, 1, 1],
-            [2, 2, 2],
-            [1.5, 0, .5],
-            [1, .25, 0],
-            [0, 0, 0]
-        ]
-
-        for point in points_to_demo:
-            self.target_pos = point.copy()
-            print(point)
-            self.write_to_cpp()
-            self.current_pos = point.copy()
-            self._data_changed = True
-            self.update_labels()
-            for _ in range(5 * 10):
-                QApplication.processEvents()
-                time.sleep(0.1)
-            
 
     def line_edit_changed(self, axis, widget):
         """
