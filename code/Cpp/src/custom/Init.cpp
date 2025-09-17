@@ -423,7 +423,6 @@ public:
 
         // BEGIN REGION DAQ INIT
         spdlog::info("Initializing the daq...");
-        spdlog::info("NEW LOGGING TEST");
         DigitalConfig digiConfig = { "Dev1", "PFI0:2" };
         AnalogConfig analogConfig = {
             "Dev1", "ai0:2",
