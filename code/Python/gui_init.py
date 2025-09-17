@@ -277,7 +277,7 @@ class MainWindow(QWidget):
 
         # -- End Button Logic --
         self.end_button = QPushButton("End")
-        self.end_button.clicked.connect(self.move_to_position)
+        self.end_button.clicked.connect(self.end_system)
         right_panel.addWidget(self.end_button)
 
         # === INITIALIZE APPLICATION DATA ===
@@ -392,11 +392,11 @@ class MainWindow(QWidget):
             self.view.update()
             self._data_changed = False
 
-    def write_to_cpp(self):
+    def write_to_cpp(self, end_flag=False):
         if not self.write_shm:
             return
         try:
-            data = struct.pack(MOTOR_STRUCT_FORMAT, self.target_pos[0], self.target_pos[1], self.target_pos[2], (self.sender() == self.end_button))
+            data = struct.pack(MOTOR_STRUCT_FORMAT, self.target_pos[0], self.target_pos[1], self.target_pos[2], end_flag)
             self.write_shm.buf[:MOTOR_STRUCT_SIZE] = data
         except Exception as e:
             print(f"Write error: {e}")
@@ -487,6 +487,10 @@ class MainWindow(QWidget):
             self.current_pos = self.target_pos.copy()
             self._data_changed = True
             self.update_labels()
+
+    def end_system(self):
+        self.write_to_cpp(end_flag=True)
+        self.close()
 
     def line_edit_changed(self, axis, widget):
         """
