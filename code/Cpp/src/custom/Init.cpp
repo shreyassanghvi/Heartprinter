@@ -648,7 +648,7 @@ public:
     bool readMotorPositions() {
         dxl_error = 0;
         dxl_comm_result = 0;
-        bool notAtPosition = true;
+        bool atPosition = true;
         do {
             // Sync read present position
 
@@ -669,7 +669,7 @@ public:
             }
 
             // Reset exitFlag to true at the start of each iteration
-            notAtPosition = true;
+            atPosition = true;
 
             for (int i = 0; i < MOTOR_CNT; i++) {
                 // Check if each motor is at its destination
@@ -678,13 +678,13 @@ public:
                 //        motor_destination[i], vMotors[i].checkAndGetPresentPosition(&groupSyncRead));
                 vMotors[i].checkAndGetPresentPosition(&groupSyncRead);
                 if (!vMotors[i].checkIfAtGoalPosition(motor_destination[i])) {
-                    notAtPosition = false;
+                    atPosition = false;
                 }
             }
 
             // Optional: Add a small delay to prevent tight looping
             // usleep(10000); // 10ms delay, adjust as needed
-        } while (notAtPosition); // Continue loop until all motors reach destination
+        } while (atPosition); // Continue loop until all motors reach destination
 
         current_state = READY;
         
