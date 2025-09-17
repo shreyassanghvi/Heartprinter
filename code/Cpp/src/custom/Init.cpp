@@ -734,11 +734,6 @@ int main(int argc, char *argv[]) {
     // Initialize the state controller
     if (!state_controller.initialize()) {
         state_controller.handleError();
-        
-        MotorCommand sharedCmd;
-        bool useSharedMemory = readMotorCommand(sharedCmd);
-        spdlog::info(sharedCmd.exit);
-
         return state_controller.cleanUp();
     }
 
