@@ -70,11 +70,10 @@ def read_all_points(filename):
 
 def compute_plane_mesh(points):
     """
-    Generate a 3D mesh representation of a plane defined by three points.
+    Generate a 3D triangular mesh representation of a plane defined by three points.
     
-    Takes the first 3 points to define a plane, then creates a rectangular mesh
-    grid that can be rendered in 3D. The mesh extends slightly beyond the
-    triangle formed by the 3 points for better visualization.
+    Creates a subdivided triangle that shows the plane surface with good lighting
+    and visual depth cues, while staying within the triangle boundary.
     
     Args:
         points (numpy.ndarray): Array of shape (3, 3) containing 3 points that define the plane
@@ -84,16 +83,10 @@ def compute_plane_mesh(points):
         tuple: (MeshData, normal_vector)
             - MeshData: PyQtGraph mesh object ready for 3D rendering
             - normal_vector: Unit vector perpendicular to the plane surface
-            
-    Mathematical approach:
-        1. Create two edge vectors from the 3 points
-        2. Calculate plane normal using cross product
-        3. Create orthonormal basis vectors for the plane
-        4. Generate a rectangular grid of vertices in the plane
-        5. Create triangular faces connecting the vertices
     """
     p0, p1, p2 = points[0], points[1], points[2]
-    # Create two vectors along the edges of the triangle, forming a plane
+    
+    # Create two vectors along the edges of the triangle
     v1 = p1 - p0
     v2 = p2 - p0
 
@@ -101,28 +94,51 @@ def compute_plane_mesh(points):
     normal = np.cross(v1, v2)
     normal /= np.linalg.norm(normal)
 
-    # Create orthonormal basis vectors for the plane surface 
-    v1_norm = v1 / np.linalg.norm(v1)
-    v2_proj = v2 - np.dot(v2, v1_norm) * v1_norm
-    v2_norm = v2_proj / np.linalg.norm(v2_proj)
-
-    # Create grid for mesh visualization 
-    n_grid = 20
-    s1 = np.linspace(0, np.linalg.norm(v1) * 1.1, n_grid)
-    s2 = np.linspace(0, np.linalg.norm(v2_proj) * 1.1, n_grid)
-    # Create 2D meshgrid and flatten for vertex calculation
-    S1, S2 = np.meshgrid(s1, s2)
-    # Calculate 3D vertex positions: start at p0, then move along basis vectors
-    vertices = p0 + np.outer(S1.flatten(), v1_norm) + np.outer(S2.flatten(), v2_norm)
-    vertices = vertices.reshape(-1, 3)
-
-    # Create triangular faces connecting the grid vertices
+    # Create subdivided triangular mesh using rectangular coordinates
+    n_grid = 15  # Subdivision level
+    
+    vertices = []
     faces = []
-    for i in range(n_grid - 1):
-        for j in range(n_grid - 1):
-            idx = i * n_grid + j
-            faces.append([idx, idx + 1, idx + n_grid])
-            faces.append([idx + 1, idx + 1 + n_grid, idx + n_grid])
+    
+    # Generate vertices using rectangular grid within triangle
+    for i in range(n_grid + 1):
+        for j in range(n_grid + 1 - i):  # This creates the triangular shape
+            # Use normalized coordinates (0 to 1)
+            u = i / n_grid  # Parameter along v1 direction
+            v = j / n_grid  # Parameter along v2 direction
+            
+            # Calculate 3D position: start at p0, move along v1 and v2
+            point = p0 + u * v1 + v * v2
+            vertices.append(point)
+    
+    # Convert to numpy array
+    vertices = np.array(vertices)
+    
+    # Generate faces connecting the vertices
+    vertex_idx = 0
+    for i in range(n_grid + 1):
+        for j in range(n_grid + 1 - i):
+            if i < n_grid and j < n_grid - i:
+                # Calculate indices for current row and next row
+                curr_row_start = vertex_idx
+                next_row_start = curr_row_start + (n_grid + 1 - i)
+                
+                # First triangle of the quad
+                faces.append([
+                    curr_row_start,
+                    curr_row_start + 1,
+                    next_row_start
+                ])
+                
+                # Second triangle (if not at the edge)
+                if j < n_grid - i - 1:
+                    faces.append([
+                        curr_row_start + 1,
+                        next_row_start + 1,
+                        next_row_start
+                    ])
+            vertex_idx += 1
+    
     faces = np.array(faces)
     meshdata = MeshData(vertexes=vertices, faces=faces)
     return meshdata, normal
@@ -336,8 +352,7 @@ class MainWindow(QWidget):
         self.plane_mesh = GLMeshItem(
             meshdata=meshdata,
             smooth=False,
-            color=(0.5, 0.7, 1.0, 0.15),
-            shader='normalColor',
+            color=(0.5, 0.5, 0.5, 0.25),
             drawEdges=True,
             edgeColor=(0, 0, 0, 0.8),
             glOptions='additive'
@@ -469,24 +484,105 @@ class MainWindow(QWidget):
             self.update_labels()
             self.move_to_position()
 
+    def validate_position(self, point):
+        """
+        Check if a point is inside the triangle formed by the three reference points.
+        
+        Uses the same algorithm as the C++ validator:
+        1. Project the point onto the plane containing the triangle
+        2. Calculate areas of sub-triangles formed by the projected point
+        3. Check if sum of sub-triangle areas equals the original triangle area
+        
+        Args:
+            point (numpy.ndarray): 3D point to validate [x, y, z]
+            
+        Returns:
+            bool: True if point is inside triangle, False otherwise
+        """
+        if self.points is None or len(self.points) < 3:
+            return False
+            
+        a, b, c = self.points[0], self.points[1], self.points[2]
+        
+        # Step 1: Project point onto the plane containing triangle ABC
+        
+        # Find the plane normal vector using cross product of two triangle edges
+        ab = b - a  # Vector AB
+        ac = c - a  # Vector AC
+        
+        # Normal vector = AB × AC
+        normal = np.cross(ab, ac)
+        
+        # Normalize the normal vector
+        normal_length = np.linalg.norm(normal)
+        if normal_length < 0.000001:
+            return False  # Degenerate triangle (collinear points)
+        normal = normal / normal_length
+        
+        # Find the projection of point onto the plane
+        # Distance from point to plane = (point-A) · normal
+        ap = point - a
+        distance_to_plane = np.dot(ap, normal)
+        
+        # Projected point = point - distance * normal
+        proj_point = point - distance_to_plane * normal
+        
+        # Step 2: Calculate areas using the projected point
+        
+        # Area of original triangle ABC
+        area_abc = self.triangle_area(a, b, c)
+        
+        # Areas of three sub-triangles formed by projected point
+        area_pab = self.triangle_area(proj_point, a, b)
+        area_pbc = self.triangle_area(proj_point, b, c)
+        area_pca = self.triangle_area(proj_point, c, a)
+        
+        # Step 3: Check if sum of sub-triangle areas equals the original triangle area
+        sum_of_sub_areas = area_pab + area_pbc + area_pca
+        area_difference = abs(sum_of_sub_areas - area_abc)
+        
+        # Point is inside triangle if the areas match within tolerance
+        return area_difference <= 0.000001
+
+    def triangle_area(self, p1, p2, p3):
+        """
+        Calculate the area of a triangle using cross product.
+        
+        Args:
+            p1, p2, p3 (numpy.ndarray): Three points defining the triangle
+            
+        Returns:
+            float: Area of the triangle
+        """
+        # Vector from p1 to p2 and p1 to p3
+        v1 = p2 - p1
+        v2 = p3 - p1
+        
+        # Cross product gives area vector, magnitude is 2 * area
+        cross_product = np.cross(v1, v2)
+        return 0.5 * np.linalg.norm(cross_product)
+
     def move_to_position(self):
         """
         Execute movement: set current position to match target position.
-        
-        This simulates the actual movement command - it updates the current position
-        (red point) to match the target position (blue point). In a real control system,
-        this would send commands to motors or actuators.
-        
-        Side effects:
-            - Copies target_pos coordinates to current_pos
             - Moves red point in 3D visualization to target location
             - Updates position display labels
         """
         if self.target_pos is not None:
-            self.write_to_cpp()
-            self.current_pos = self.target_pos.copy()
-            self._data_changed = True
-            self.update_labels()
+            # Validate position before moving
+            if not self.validate_position(self.target_pos):
+                QMessageBox.warning(
+                    self, 
+                    "Invalid Position", 
+                    "Moving platform is outside the triangle formed by L, C, and R.\n"
+                    "Please choose a position within the bounds."
+                )
+                return
+            else:
+                self.write_to_cpp()
+                self.current_pos = self.target_pos.copy()
+                self._data_changed = True
+                self.update_labels()
 
     def end_system(self):
         self.write_to_cpp(end_flag=True)
