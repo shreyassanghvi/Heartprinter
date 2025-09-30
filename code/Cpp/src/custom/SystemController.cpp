@@ -8,7 +8,7 @@
 #include "../../include/custom/NIDAQ.h"
 #include "../../include/custom/SharedMemoryManager.h"
 #include "../../include/Trackstar/ATC3DG.h"
-#include "../Dynamixel_SDK/dynamixel_sdk.h"
+#include "../dynamixel_sdk/DynamixelSDK.h"
 
 #include <spdlog/spdlog.h>
 #include <chrono>
@@ -83,7 +83,6 @@ bool SystemController::initialize() {
         sharedMemory->writeStatusUpdate(currentPosition.x, currentPosition.y, currentPosition.z, currentStateToString());
         spdlog::info("System initialization complete - Ready for operation");
         return true;
-        
     } catch (const SystemException& e) {
         handleError(e);
         return false;
@@ -157,13 +156,10 @@ bool SystemController::initializeDAQ() {
                                     data[0]);
                    } catch (std::exception &e) {
                        spdlog::error("Error: {}", e.what());
-
-                       state = ERROR;
                    }
            },
            [](const char* errorMessage) {
                spdlog::error("DAQ Error: {}", errorMessage);
-               state = ERROR;
            }
         );
 
@@ -177,14 +173,14 @@ bool SystemController::initializeDAQ() {
             spdlog::error("Failed to set all LEDs off");
             return false;
         }
-        if (!setAllLEDs(false) {
+        if (!setAllLEDs(false)) {
             spdlog::error("Failed to set all LEDs off");
             return false;
         }
 
         // TODO: maybe move into a separate function
         spdlog::warn("TODO: Initializing load cell...");
-        if (DAQStart(daqSystem.analogHandle) != 0){
+        if (DAQStart(daqSystem->analogHandle) != 0){
             return false;
         }
 
@@ -272,7 +268,7 @@ bool SystemController::initializeTracker() {
     spdlog::info("Initializing tracking system...");
     
     try {
-        tracker = std::make_unique<CTrackstar>();
+        tracker = std::make_unique<CSystem>();
         
         // Initialize TrackStar system using existing functions
         initTxRx();
@@ -314,8 +310,9 @@ void SystemController::run() {
             // Process state transitions
             States newState = processStateTransition(currentState);
             if (newState != currentState) {
-                spdlog::info("{} -> {}", currentStateToString(currentState), currentStateToString(newState));
+                std::string state_str = currentStateToString();
                 currentState = newState;
+                spdlog::info("{} -> {}", state_str, currentStateToString());
             }
             sharedMemory->writeStatusUpdate(currentPosition.x, currentPosition.y, currentPosition.z, currentStateToString());
 
@@ -403,7 +400,7 @@ States SystemController::processStateTransition(States current) {
             // Check for safety conditions
             if (!performSafetyCheck(currentPosition)) {
                 spdlog::warn("Safety check failed - entering error state");
-                return States::ERROR;
+                return States::ERR;
             }
 
             // Check if motors are moving
@@ -423,12 +420,12 @@ States SystemController::processStateTransition(States current) {
             // Check for safety conditions while moving
             if (!performSafetyCheck(currentPosition)) {
                 spdlog::warn("Safety check failed while moving - stopping");
-                return States::ERROR;
+                return States::ERR;
             }
 
             return States::MOVING;
 
-        case States::ERROR:
+        case States::ERR:
             return States::CLEANUP;
 
         case States::CLEANUP:
@@ -439,7 +436,7 @@ States SystemController::processStateTransition(States current) {
 
         default:
             spdlog::error("Unknown state: {}", static_cast<int>(current));
-            return States::ERROR;
+            return States::ERR;
     }
 }
 
@@ -588,7 +585,7 @@ void SystemController::cleanupDAQ() {
 
 // Handle system errors
 void SystemController::handleError(const SystemException& e) {
-    currentState = States::ERROR;
+    currentState = States::ERR;
     lastErrorMessage = e.what();
     spdlog::error("System error [{}]: {}", 
                  static_cast<int>(e.getErrorCode()), e.what());
@@ -648,7 +645,7 @@ std::string SystemController::currentStateToString() const {
         case States::READY: return "READY";
         case States::RUNNING: return "RUN";
         case States::MOVING: return "MOVE";
-        case States::ERROR: return "ERR";
+        case States::ERR: return "ERR";
         case States::END: return "END";
         case States::CLEANUP: return "CLEAN";
         default: return "UNK";
@@ -782,13 +779,13 @@ bool SystemController::readMotorPositions() {
         bool allReached = true;
         
         for (int j = 0; j < MOTOR_CNT && j < static_cast<int>(motors.size()); j++) {
-            motors[j].checkAndGetPresentPosition(groupSyncRead);
+            uint32_t motor_j_current_pos = motors[j].checkAndGetPresentPosition(groupSyncRead);
             if (!motors[j].checkIfAtGoalPosition(motorDestinations[j])) {
                 allReached = false;
             }
 
             spdlog::debug("Motor {}: Current: {}, Target: {}, Diff: {}", 
-                         j, currentPos, targetPos, std::abs(static_cast<int>(currentPos) - targetPos));
+                         j, motor_j_current_pos, motorDestinations[j], std::abs(static_cast<int>(motor_j_current_pos) - motorDestinations[j]));
         }
         
         return allReached;

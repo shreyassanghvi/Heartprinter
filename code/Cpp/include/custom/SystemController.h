@@ -15,9 +15,11 @@
 #include <windows.h>
 #endif
 
+#include "../Trackstar/ATC3DG.h"
+
 // Forward declarations for existing hardware classes
 class Motor;
-class CTrackstar;
+class CSystem;
 class SharedMemoryManager;
 struct DAQSystem;
 struct DigitalConfig;
@@ -30,7 +32,7 @@ enum class States {
     READY,
     RUNNING,
     MOVING,
-    ERROR,
+    ERR,
     END,
     CLEANUP
 };
@@ -47,24 +49,12 @@ enum class SystemError {
 };
 
 // Forward declaration for tracking data structure
-struct DOUBLE_POSITION_ANGLES_RECORD;
+// struct DOUBLE_POSITION_ANGLES_RECORD;
 
 // Shared memory structures
-struct MotorCommand {
-    double target_x;
-    double target_y; 
-    double target_z;
-    bool exit;
-    char padding[6];
-};
+struct MotorCommand;
 
-struct StatusUpdate {
-    double current_x;
-    double current_y;
-    double current_z;
-    char status[6];
-    char padding[2];
-};
+struct StatusUpdate;
 
 // System configuration
 struct SystemConfig {
@@ -77,7 +67,7 @@ struct SystemConfig {
 // System status
 struct SystemStatus {
     States currentState = States::START;
-    DOUBLE_POSITION_ANGLES_RECORD currentPosition = {};
+    DOUBLE_POSITION_ANGLES_RECORD currentPosition;
     bool motorsEnabled = false;
     bool trackingActive = false;
     bool daqActive = false;
@@ -110,7 +100,7 @@ private:
     
     // Hardware components - direct integration with existing classes
     std::vector<Motor> motors;
-    std::unique_ptr<CTrackstar> tracker;
+    std::unique_ptr<CSystem> tracker;
     std::unique_ptr<DAQSystem> daqSystem;
     std::unique_ptr<SharedMemoryManager> sharedMemory;
     
