@@ -250,6 +250,7 @@ bool SystemController::initializeMotors() {
         }
 
         while(!motors[0].checkIfAtGoalPosition(DXL_MAXIMUM_POSITION_VALUE)){
+            motors[0].checkAndGetPresentPosition(&groupSyncRead);
             spdlog::info("Waiting to reach MAX position");
         }
         
@@ -270,6 +271,7 @@ bool SystemController::initializeMotors() {
         }
 
         while(!motors[0].checkIfAtGoalPosition(DXL_MINIMUM_POSITION_VALUE)){
+            motors[0].checkAndGetPresentPosition(&groupSyncRead);
             spdlog::info("Waiting to reach MIN position");
         }
         
