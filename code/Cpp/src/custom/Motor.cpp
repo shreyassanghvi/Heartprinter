@@ -135,6 +135,7 @@ uint32_t Motor::checkAndGetPresentPosition(dynamixel::GroupSyncRead *groupSyncRe
     }
     this->motor.DXL_PRESENT_POSITION_VALUE = groupSyncRead->getData(this->getMotorID(), ADDR_PRESENT_POSITION,
                                                                     LEN_PRESENT_POSITION);
+    groupSyncRead->clearParam();
     return this->motor.DXL_PRESENT_POSITION_VALUE;
 }
 
