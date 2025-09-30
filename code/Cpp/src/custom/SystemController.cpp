@@ -234,9 +234,13 @@ bool SystemController::initializeMotors() {
                 return false;
             }
             
+        }
+        
+        groupSyncWrite.clearParam();
+        for (int i = 0; i < MOTOR_CNT; i++) {
             // Set initial position to maximum
-            if (!motors.back().setMotorDestination(&groupSyncWrite, DXL_MAXIMUM_POSITION_VALUE)) {
-                spdlog::error("Failed to set initial MAX position for motor {}", i);
+            if (!motors[i].setMotorDestination(&groupSyncWrite, DXL_MAXIMUM_POSITION_VALUE)) {
+                spdlog::error("Failed to set initial MIN position for motor {}", i);
                 return false;
             }
         }
