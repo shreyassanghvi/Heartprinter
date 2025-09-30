@@ -25,14 +25,14 @@
 #define MOTOR_CNT 3
 
 // Dynamixel SDK global variables (moved from Init.cpp)
-static dynamixel::PortHandler *portHandler = nullptr;
-static dynamixel::PacketHandler *packetHandler = nullptr;
-static dynamixel::GroupSyncWrite *groupSyncWrite = nullptr;
-static dynamixel::GroupSyncRead *groupSyncRead = nullptr;
 
 // Constructor
 SystemController::SystemController(const SystemConfig& config)
-    : config(config), currentState(States::START) {
+    : config(config), currentState(States::START), 
+    portHandler(dynamixel::PortHandler::getPortHandler(config.deviceName.c_str())),
+    packetHandler(dynamixel::PacketHandler::getPacketHandler(PROTOCOL_VERSION)), 
+    groupSyncWrite(portHandler, packetHandler, ADDR_GOAL_POSITION, LEN_GOAL_POSITION),
+    groupSyncRead(portHandler, packetHandler, ADDR_PRESENT_POSITION, LEN_PRESENT_POSITION) {
     spdlog::info("SystemController created with device: {}", config.deviceName);
 
     // Initialize motor control variables
@@ -43,6 +43,7 @@ SystemController::SystemController(const SystemConfig& config)
 
     // Create shared memory manager
     sharedMemory = std::make_unique<SharedMemoryManager>();
+
 }
 
 // Destructor - RAII cleanup
@@ -198,12 +199,6 @@ bool SystemController::initializeMotors() {
     spdlog::info("Initializing motor controllers...");
     
     try {
-        // Initialize Dynamixel SDK components
-        portHandler = dynamixel::PortHandler::getPortHandler(config.deviceName.c_str());
-        packetHandler = dynamixel::PacketHandler::getPacketHandler(PROTOCOL_VERSION);
-        groupSyncWrite = new dynamixel::GroupSyncWrite(portHandler, packetHandler, ADDR_GOAL_POSITION, LEN_GOAL_POSITION);
-        groupSyncRead = new dynamixel::GroupSyncRead(portHandler, packetHandler, ADDR_PRESENT_POSITION, LEN_PRESENT_POSITION);
-        
         // Open port
         if (!portHandler->openPort()) {
             spdlog::error("Failed to open the port: {}", config.deviceName);
@@ -240,20 +235,20 @@ bool SystemController::initializeMotors() {
             }
             
             // Set initial position to minimum
-            if (!motors.back().setMotorDestination(groupSyncWrite, DXL_MINIMUM_POSITION_VALUE)) {
+            if (!motors.back().setMotorDestination(&groupSyncWrite, DXL_MINIMUM_POSITION_VALUE)) {
                 spdlog::error("Failed to set initial position for motor {}", i);
                 return false;
             }
         }
         
         // Execute initial position setting
-        int dxl_comm_result = groupSyncWrite->txPacket();
+        int dxl_comm_result = groupSyncWrite.txPacket();
         if (dxl_comm_result != COMM_SUCCESS) {
             spdlog::error("Failed to execute initial motor positioning: {}", packetHandler->getTxRxResult(dxl_comm_result));
             return false;
         }
         
-        groupSyncWrite->clearParam();
+        groupSyncWrite.clearParam();
         spdlog::info("Motor controllers initialized successfully - torque enabled");
         return true;
         
@@ -549,14 +544,6 @@ void SystemController::shutdown() {
         if (portHandler) {
             portHandler->closePort();
         }
-        if (groupSyncWrite) {
-            delete groupSyncWrite;
-            groupSyncWrite = nullptr;
-        }
-        if (groupSyncRead) {
-            delete groupSyncRead;
-            groupSyncRead = nullptr;
-        }
         
         // Clear hardware components
         motors.clear();
@@ -747,20 +734,20 @@ bool SystemController::moveMotorPositions() {
     try {
         // Use the group sync write
         for (int j = 0; j < MOTOR_CNT && j < static_cast<int>(motors.size()); j++) {
-            if (!motors[j].setMotorDestination(groupSyncWrite, motorDestinations[j])) {
+            if (!motors[j].setMotorDestination(&groupSyncWrite, motorDestinations[j])) {
                 spdlog::error("Failed to set motor {} destination", j);
                 return false;
             }
         }
         
         // Execute the group sync write
-        int dxl_comm_result = groupSyncWrite->txPacket();
+        int dxl_comm_result = groupSyncWrite.txPacket();
         if (dxl_comm_result != COMM_SUCCESS) {
             spdlog::error("Group sync write failed: {}", packetHandler->getTxRxResult(dxl_comm_result));
             return false;
         }
         
-        groupSyncWrite->clearParam();
+        groupSyncWrite.clearParam();
         return true;
         
     } catch (const std::exception& e) {
@@ -774,12 +761,31 @@ bool SystemController::readMotorPositions() {
     if (motors.empty()) {
         return false;
     }
-    
+    int dxl_comm_result = 0;
+    uint8_t dxl_error = 0;
     try {
+        groupSyncRead.clearParam();
+        for (int i = 0; i < MOTOR_CNT; i++) {
+            groupSyncRead.addParam(motors[i].getMotorID());
+        }
+        dxl_comm_result = groupSyncRead.txRxPacket();
+        if (dxl_comm_result != COMM_SUCCESS) {
+            spdlog::error("{}", packetHandler->getTxRxResult(dxl_comm_result));
+            for (int i = 0; i < MOTOR_CNT; i++) {
+                if (groupSyncRead.getError(motors[i].getMotorID(), &dxl_error)) {
+                    spdlog::error("[ID:{:3d}] {}\n", motors[i].getMotorID(),
+                        packetHandler->getRxPacketError(dxl_error));
+                }
+            }
+            return false;
+        }
+
+
+
         bool allReached = true;
         
         for (int j = 0; j < MOTOR_CNT && j < static_cast<int>(motors.size()); j++) {
-            uint32_t motor_j_current_pos = motors[j].checkAndGetPresentPosition(groupSyncRead);
+            uint32_t motor_j_current_pos = motors[j].checkAndGetPresentPosition(&groupSyncRead);
             if (!motors[j].checkIfAtGoalPosition(motorDestinations[j])) {
                 allReached = false;
             }

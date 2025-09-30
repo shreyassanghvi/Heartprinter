@@ -16,6 +16,7 @@
 #endif
 
 #include "../Trackstar/ATC3DG.h"
+#include "../Dynamixel_SDK/dynamixel_sdk.h"
 
 // Forward declarations for existing hardware classes
 class Motor;
@@ -97,6 +98,11 @@ private:
     DOUBLE_POSITION_ANGLES_RECORD currentPosition = {};
     std::string lastErrorMessage;
     bool initialized = false;
+
+    dynamixel::PortHandler *portHandler;
+    dynamixel::PacketHandler *packetHandler;
+    dynamixel::GroupSyncWrite groupSyncWrite;
+    dynamixel::GroupSyncRead groupSyncRead;
     
     // Hardware components - direct integration with existing classes
     std::vector<Motor> motors;

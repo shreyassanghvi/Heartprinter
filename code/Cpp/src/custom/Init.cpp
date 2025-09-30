@@ -86,6 +86,7 @@ int main(int argc, char *argv[]) {
     spdlog::info("Heart Printer System starting...");
 
     try {
+        spdlog::info("Setting up config");
         // Create system configuration
         SystemConfig config;
         config.deviceName = "/dev/ttyUSB0";  // Adjust for your system
@@ -94,6 +95,7 @@ int main(int argc, char *argv[]) {
         config.enableSafetyChecks = true;
 
         // Create and initialize system controller
+        spdlog::info("Construct systemcontroller");
         SystemController systemController(config);
         
         spdlog::info("Initializing system...");
