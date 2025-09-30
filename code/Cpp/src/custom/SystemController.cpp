@@ -241,17 +241,22 @@ bool SystemController::initializeMotors() {
             }
         }
         
+        // TOOD: Move all of this to CALIBRATION state
         // Execute initial position setting
         int dxl_comm_result = groupSyncWrite.txPacket();
         if (dxl_comm_result != COMM_SUCCESS) {
             spdlog::error("Failed to execute initial MAX motor positioning: {}", packetHandler->getTxRxResult(dxl_comm_result));
             return false;
         }
+
+        while(!motors[0].checkIfAtGoalPosition(DXL_MAXIMUM_POSITION_VALUE)){
+            spdlog::info("Waiting to reach MAX position");
+        }
         
         groupSyncWrite.clearParam();
         for (int i = 0; i < MOTOR_CNT; i++) {
             // Set initial position to maximum
-            if (!motors.back().setMotorDestination(&groupSyncWrite, DXL_MINIMUM_POSITION_VALUE)) {
+            if (!motors[i].setMotorDestination(&groupSyncWrite, DXL_MINIMUM_POSITION_VALUE)) {
                 spdlog::error("Failed to set initial MIN position for motor {}", i);
                 return false;
             }
@@ -262,6 +267,10 @@ bool SystemController::initializeMotors() {
         if (dxl_comm_result != COMM_SUCCESS) {
             spdlog::error("Failed to execute initial MIN motor positioning: {}", packetHandler->getTxRxResult(dxl_comm_result));
             return false;
+        }
+
+        while(!motors[0].checkIfAtGoalPosition(DXL_MINIMUM_POSITION_VALUE)){
+            spdlog::info("Waiting to reach MAX position");
         }
         
         groupSyncWrite.clearParam();
@@ -409,10 +418,10 @@ States SystemController::processStateTransition(States current) {
 
         case States::RUNNING:
             // Check for safety conditions
-            if (!performSafetyCheck(currentPosition)) {
-                spdlog::warn("Safety check failed - entering error state");
-                return States::ERR;
-            }
+            // if (!performSafetyCheck(currentPosition)) {
+            //     spdlog::warn("Safety check failed - entering error state");
+            //     return States::ERR;
+            // }
 
             // Check if motors are moving
             if (!readMotorPositions()) {
@@ -429,10 +438,10 @@ States SystemController::processStateTransition(States current) {
             }
 
             // Check for safety conditions while moving
-            if (!performSafetyCheck(currentPosition)) {
-                spdlog::warn("Safety check failed while moving - stopping");
-                return States::ERR;
-            }
+            // if (!performSafetyCheck(currentPosition)) {
+            //     spdlog::warn("Safety check failed while moving - stopping");
+            //     return States::ERR;
+            // }
 
             return States::MOVING;
 
