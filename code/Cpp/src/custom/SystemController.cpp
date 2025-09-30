@@ -219,18 +219,18 @@ bool SystemController::initializeMotors() {
         
         for (int i = 0; i < MOTOR_CNT; i++) {
             // Create Motor directly with ID (1-based indexing)
-            motors.emplace_back(i + 1);
+            motors.emplace_back(i);
             
             // Initialize each motor (logic from initMotors function in Init.cpp)
             // Set motor operation mode to extended position control
             if (motors.back().setMotorOperationMode(packetHandler, portHandler, EXTENDED_POSITION_CONTROL_MODE) != EXTENDED_POSITION_CONTROL_MODE) {
-                spdlog::error("Failed to set operation mode for motor {}", i + 1);
+                spdlog::error("Failed to set operation mode for motor {}", i);
                 return false;
             }
             
             // Enable motor torque
             if (motors.back().enableTorque(packetHandler, portHandler) != 0) {
-                spdlog::error("Failed to enable torque for motor {}", i + 1);
+                spdlog::error("Failed to enable torque for motor {}", i);
                 return false;
             }
             
