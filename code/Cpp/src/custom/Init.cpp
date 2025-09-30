@@ -89,7 +89,7 @@ int main(int argc, char *argv[]) {
         spdlog::info("Setting up config");
         // Create system configuration
         SystemConfig config;
-        config.deviceName = "/dev/ttyUSB0";  // Adjust for your system
+        config.deviceName = "COM4";  // Adjust for your system
         config.baudRate = 57600;
         config.recordCount = 1000;
         config.enableSafetyChecks = true;
