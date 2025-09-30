@@ -234,25 +234,33 @@ bool SystemController::initializeMotors() {
                 return false;
             }
             
-            groupSyncWrite.clearParam();
             // Set initial position to maximum
             if (!motors.back().setMotorDestination(&groupSyncWrite, DXL_MAXIMUM_POSITION_VALUE)) {
                 spdlog::error("Failed to set initial MAX position for motor {}", i);
                 return false;
             }
-            groupSyncWrite.clearParam();
-            // Set initial position to minimum
-            if (!motors.back().setMotorDestination(&groupSyncWrite, DXL_MINIMUM_POSITION_VALUE)) {
-                spdlog::error("Failed to set initial MIN position for motor {}", i);
-                return false;
-            }
-            groupSyncWrite.clearParam();
         }
         
         // Execute initial position setting
         int dxl_comm_result = groupSyncWrite.txPacket();
         if (dxl_comm_result != COMM_SUCCESS) {
-            spdlog::error("Failed to execute initial motor positioning: {}", packetHandler->getTxRxResult(dxl_comm_result));
+            spdlog::error("Failed to execute initial MAX motor positioning: {}", packetHandler->getTxRxResult(dxl_comm_result));
+            return false;
+        }
+        
+        groupSyncWrite.clearParam();
+        for (int i = 0; i < MOTOR_CNT; i++) {
+            // Set initial position to maximum
+            if (!motors.back().setMotorDestination(&groupSyncWrite, DXL_MINIMUM_POSITION_VALUE)) {
+                spdlog::error("Failed to set initial MIN position for motor {}", i);
+                return false;
+            }
+        }
+        
+        // Execute initial position setting
+        dxl_comm_result = groupSyncWrite.txPacket();
+        if (dxl_comm_result != COMM_SUCCESS) {
+            spdlog::error("Failed to execute initial MIN motor positioning: {}", packetHandler->getTxRxResult(dxl_comm_result));
             return false;
         }
         
