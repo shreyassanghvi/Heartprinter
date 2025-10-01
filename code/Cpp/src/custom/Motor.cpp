@@ -108,6 +108,7 @@ int Motor::disableTorque(dynamixel::PacketHandler *packetHandler, dynamixel::Por
 bool Motor::setMotorDestination(dynamixel::GroupSyncWrite *groupSyncWrite, double goalPosition) const {
     //TODO: add parameter check
     // Allocate goal position value into byte array
+
     if (groupSyncWrite == nullptr) {
         spdlog::error("[ID:{:3d}] groupSyncWrite addparam failed: null", this->getMotorID());
         return false;
@@ -126,9 +127,18 @@ bool Motor::setMotorDestination(dynamixel::GroupSyncWrite *groupSyncWrite, doubl
 
 uint32_t Motor::checkAndGetPresentPosition(dynamixel::GroupSyncRead *groupSyncRead) {
     groupSyncRead->addParam(this->getMotorID());
-    uint8_t dxl_error = 0;
+
     int dxl_comm_result = groupSyncRead->txRxPacket();
-    spdlog::debug("dxl_comm_result: {}", dxl_comm_result);
+    uint8_t dxl_error = 0;
+    if (dxl_comm_result != COMM_SUCCESS) {
+        spdlog::debug("dxl_comm_result: {}", dxl_comm_result);
+        if (groupSyncRead->getError(this->getMotorID(), &dxl_error)) {
+            spdlog::debug("dxl_error: {}", dxl_error);
+            // spdlog::error("[ID:{:3d}] {}\n", this->getMotorID(),
+            //               packetHandler->getRxPacketError(dxl_error));
+        }
+    }
+
     //TODO: add parameter check
 
     if (groupSyncRead->
@@ -198,7 +208,7 @@ void Motor::ledOperationMode(dynamixel::PacketHandler *packetHandler, dynamixel:
 
 double Motor::mmToDynamixelUnits(double mm) const {
     double steps_per_mm = 4096.0 / (M_PI * this->pulley_diameter_mm);
-    spdlog::trace("Steps converted from {}mm: {:.4f}revs", mm, mm*steps_per_mm);
+    spdlog::trace("Steps converted from {}mm: {:.4f}revs", mm, mm * steps_per_mm);
 
     return mm * steps_per_mm;
 }

@@ -95,12 +95,6 @@ bool SystemController::initialize() {
 
 // Initialize hardware components
 bool SystemController::initializeHardware() {
-    // Initialize DAQ system
-    if (!initializeDAQ()) {
-        throw SystemException(SystemError::DAQ_INIT_FAILED,
-                            "Failed to initialize DAQ system");
-    }
-
     // Initialize motors
     if (!initializeMotors()) {
         throw SystemException(SystemError::MOTOR_INIT_FAILED, 
@@ -112,7 +106,11 @@ bool SystemController::initializeHardware() {
         throw SystemException(SystemError::TRACKER_INIT_FAILED, 
                             "Failed to initialize TrackStar system");
     }
-    
+    // Initialize DAQ system
+    if (!initializeDAQ()) {
+        throw SystemException(SystemError::DAQ_INIT_FAILED,
+                            "Failed to initialize DAQ system");
+    }
     spdlog::info("All hardware components initialized successfully");
     return true;
 }
@@ -197,7 +195,7 @@ bool SystemController::initializeDAQ() {
 // Initialize motors using direct Motor objects (self-contained)
 bool SystemController::initializeMotors() {
     spdlog::info("Initializing motor controllers...");
-    int caliberationDestination[] = {minPos, maxPos, neutralPos};
+    int caliberationDestination[] = {maxPos, minPos, neutralPos};
     try {
         // Open port
         if (!portHandler->openPort()) {
@@ -237,27 +235,23 @@ bool SystemController::initializeMotors() {
         for (int calCycle = 0; calCycle< 3; calCycle++) {
             groupSyncWrite.clearParam();
             for (int i = 0; i < MOTOR_CNT; i++) {
-                // Set initial position to maximum
-                if (!motors[i].setMotorDestination(&groupSyncWrite, caliberationDestination[calCycle])) {
-                    spdlog::error("Failed to set to {} position for motor {}", caliberationDestination[calCycle], i);
+                motorDestinations[i] = caliberationDestination[calCycle];
+                if (!motors[i].setMotorDestination(&groupSyncWrite, motorDestinations[i])) {
+                    spdlog::error("Failed to set to {} position for motor {}", motorDestinations[i], i);
                     return false;
                 }
             }
+
             int dxl_comm_result = groupSyncWrite.txPacket();
             if (dxl_comm_result != COMM_SUCCESS) {
-                spdlog::error("Failed to execute {} motor positioning: {}",caliberationDestination[calCycle],  packetHandler->getTxRxResult(dxl_comm_result));
+                spdlog::error("Failed to execute movement to {} motor position: {}", caliberationDestination[calCycle],  packetHandler->getTxRxResult(dxl_comm_result));
                 return false;
             }
-            uint8_t dxl_error = 0;
-            if (motors[0].checkAndGetPresentPosition(&groupSyncRead)== EXIT_FAILURE) {
-                printf("%s\n", packetHandler->getRxPacketError(dxl_error));
-            }
-            while(!motors[0].checkIfAtGoalPosition(caliberationDestination[calCycle])){
-                motors[0].checkAndGetPresentPosition(&groupSyncRead);
-                spdlog::info("Waiting to reach {} position", caliberationDestination[calCycle]);
+            while(!this->readMotorPositions()) {
+                ;
             }
         }
-
+        groupSyncWrite.clearParam();
 
         spdlog::info("Motor controllers initialized successfully - torque enabled");
         return true;
@@ -664,18 +658,18 @@ bool SystemController::readSharedMemoryCommand(MotorCommand& cmd) {
 
 // Calculate motor positions from shared memory command
 void SystemController::calculateMotorPositionsFromCommand(const MotorCommand& cmd) {
-    static const double DEADBAND = 3.0;
+    static const double DEADBAND = 30.0;
     if ((DEADBAND < cmd.target_x < -DEADBAND) ||
         (DEADBAND < cmd.target_y < -DEADBAND) ||
         (DEADBAND < cmd.target_z < -DEADBAND)) {
         spdlog::warn("SHM: Target cannot be reached, outside of DEADBAND.");
     }
 
-    // Convert mm to Dynamixel units using first motor's conversion function
+    // Convert mm to Dynamixel units using motor's conversion function
     if (!motors.empty()) {
         motorDestinations[0] = motors[0].mmToDynamixelUnits(cmd.target_x);
-        motorDestinations[1] = motors[0].mmToDynamixelUnits(cmd.target_y);
-        motorDestinations[2] = motors[0].mmToDynamixelUnits(cmd.target_z);
+        motorDestinations[1] = motors[1].mmToDynamixelUnits(cmd.target_y);
+        motorDestinations[2] = motors[2].mmToDynamixelUnits(cmd.target_z);
 
         spdlog::info("SHM: Target ({:.2f}, {:.2f}, {:.2f}) -> Dest: [{:4d}, {:4d}, {:4d}]",
                     cmd.target_x, cmd.target_y, cmd.target_z,
@@ -742,8 +736,29 @@ bool SystemController::moveMotorPositions() {
     }
     
     try {
+
+
+        groupSyncWrite.clearParam();
+        for (int i = 0; i < MOTOR_CNT; i++) {
+            motorDestinations[i] = caliberationDestination[calCycle];
+            if (!motors[i].setMotorDestination(&groupSyncWrite, motorDestinations[i])) {
+                spdlog::error("Failed to set to {} position for motor {}", motorDestinations[i], i);
+                return false;
+            }
+        }
+
+        int dxl_comm_result = groupSyncWrite.txPacket();
+        if (dxl_comm_result != COMM_SUCCESS) {
+            spdlog::error("Failed to execute movement to {} motor position: {}", caliberationDestination[calCycle],  packetHandler->getTxRxResult(dxl_comm_result));
+            return false;
+        }
+        while(!this->readMotorPositions()) {
+            ;
+        }
+
         // Use the group sync write
         for (int j = 0; j < MOTOR_CNT && j < static_cast<int>(motors.size()); j++) {
+
             if (!motors[j].setMotorDestination(&groupSyncWrite, motorDestinations[j])) {
                 spdlog::error("Failed to set motor {} destination", j);
                 return false;
@@ -775,20 +790,20 @@ bool SystemController::readMotorPositions() {
     uint8_t dxl_error = 0;
     try {
         groupSyncRead.clearParam();
-        for (int i = 0; i < MOTOR_CNT; i++) {
-            groupSyncRead.addParam(motors[i].getMotorID());
-        }
-        dxl_comm_result = groupSyncRead.txRxPacket();
-        if (dxl_comm_result != COMM_SUCCESS) {
-            spdlog::error("{}", packetHandler->getTxRxResult(dxl_comm_result));
-            for (int i = 0; i < MOTOR_CNT; i++) {
-                if (groupSyncRead.getError(motors[i].getMotorID(), &dxl_error)) {
-                    spdlog::error("[ID:{:3d}] {}\n", motors[i].getMotorID(),
-                        packetHandler->getRxPacketError(dxl_error));
-                }
-            }
-            return false;
-        }
+        // for (int i = 0; i < MOTOR_CNT; i++) {
+        //     groupSyncRead.addParam(motors[i].getMotorID());
+        // }
+        // dxl_comm_result = groupSyncRead.txRxPacket();
+        // if (dxl_comm_result != COMM_SUCCESS) {
+        //     spdlog::error("{}", packetHandler->getTxRxResult(dxl_comm_result));
+        //     for (int i = 0; i < MOTOR_CNT; i++) {
+        //         if (groupSyncRead.getError(motors[i].getMotorID(), &dxl_error)) {
+        //             spdlog::error("[ID:{:3d}] {}\n", motors[i].getMotorID(),
+        //                 packetHandler->getRxPacketError(dxl_error));
+        //         }
+        //     }
+        //     return false;
+        // }
 
         bool allReached = true;
         
