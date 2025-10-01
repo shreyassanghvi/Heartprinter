@@ -17,7 +17,41 @@
 #include <sstream>
 #include <iostream>
 
+#include <windows.h>
+#include <stdio.h>
+
 namespace fs = std::filesystem;
+
+// Shared memory structure for motor commands
+struct MotorCommand {
+    double target_x;
+    double target_y; 
+    double target_z;
+    bool exit;
+    char padding[6];
+};
+
+// Global shared memory variables
+HANDLE hMotorCommandMapFile = NULL;
+MotorCommand* pMotorCommandSharedData = nullptr;
+const char* SHM_MOTOR_COMMAND_NAME = "Local\\PyToCPP";
+const size_t SHM_MOTOR_COMMAND_SIZE = sizeof(MotorCommand);
+
+// Shared memory structure for motor commands
+struct StatusUpdate {
+    double current_x;
+    double current_y;
+    double current_z;
+    char status[6];
+    char padding[2];
+};
+
+// Global shared memory variables
+HANDLE hStatusUpdateMapFile = NULL;
+StatusUpdate* pStatusUpdateSharedData = nullptr;
+const char* SHM_STATUS_UPDATE_NAME = "Local\\CPPToPy";
+const size_t SHM_STATUS_UPDATE_SIZE = sizeof(StatusUpdate);
+
 // #define for various definitions for the DYNAMIXEL
 #define PROTOCOL_VERSION                2.0                 // See which protocol version is used in the DYNAMIXEL
 // #define DEVICENAME                      "COM4"      // ex) Windows: "COM1"   Linux: "/dev/ttyUSB0" Mac: "/dev/tty.usbserial-*"
@@ -26,7 +60,7 @@ namespace fs = std::filesystem;
 // #define BAUDRATE                        57600
 
 //user defined #define
-#define RECORD_CNT                          1000                 // Number of records to collect
+#define RECORD_CNT                          10000                 // Number of records to collect
 #define MOTOR_CNT                           3                  // Number of motors to control
 
 enum TRACKSTAR_SENSORS_ID {
@@ -132,9 +166,153 @@ void ErrorHandlerDAQ(const char *errorMessage) {
     state = ERR;
 }
 
+// Initialize shared memory for reading motor commands.
+// TODO: This can definitely be cleaned up significantly.
+bool initSharedMemory() {
+    hMotorCommandMapFile = OpenFileMapping(
+        FILE_MAP_ALL_ACCESS,
+        FALSE,
+        SHM_MOTOR_COMMAND_NAME);
+    
+    if (hMotorCommandMapFile == NULL) {
+        if(GetLastError() == 2){
+            spdlog::warn("File not yet created. Creating file first.");
+             hMotorCommandMapFile = CreateFileMapping(
+                INVALID_HANDLE_VALUE,
+                NULL,
+                PAGE_READWRITE,
+                0,
+                SHM_MOTOR_COMMAND_SIZE,
+                SHM_MOTOR_COMMAND_NAME
+            );
+            if (hMotorCommandMapFile == NULL){
+                spdlog::warn("Failed to create file mapping");
+                spdlog::warn(GetLastError());
+            }
+        } else{
+            spdlog::warn("Shared memory not found, motor commands will use trackstar data only");
+            spdlog::warn(GetLastError());
+            return false;
+        }
+    }
+    
+    pMotorCommandSharedData = (MotorCommand*)MapViewOfFile(
+        hMotorCommandMapFile,
+        FILE_MAP_READ,
+        0,
+        0,
+        SHM_MOTOR_COMMAND_SIZE);
+    
+    if (pMotorCommandSharedData == NULL) {
+        spdlog::error("MapViewOfFile failed: {}", GetLastError());
+        CloseHandle(hMotorCommandMapFile);
+        hMotorCommandMapFile = NULL;
+        return false;
+    }
+
+    hStatusUpdateMapFile = OpenFileMapping(
+        FILE_MAP_ALL_ACCESS,
+        FALSE,
+        SHM_STATUS_UPDATE_NAME);
+    
+    if (hStatusUpdateMapFile == NULL) {
+        if(GetLastError() == 2){
+            spdlog::warn("File not yet created. Creating file first.");
+             hStatusUpdateMapFile = CreateFileMapping(
+                INVALID_HANDLE_VALUE,
+                NULL,
+                PAGE_READWRITE,
+                0,
+                SHM_STATUS_UPDATE_SIZE,
+                SHM_STATUS_UPDATE_NAME
+            );
+            if (hStatusUpdateMapFile == NULL){
+                spdlog::warn("Failed to create file mapping");
+                spdlog::warn(GetLastError());
+            }
+        } else{
+            spdlog::warn("Shared memory not found, motor commands will use trackstar data only");
+            spdlog::warn(GetLastError());
+            return false;
+        }
+    }
+    
+    pStatusUpdateSharedData = (StatusUpdate*)MapViewOfFile(
+        hStatusUpdateMapFile,
+        FILE_MAP_WRITE,
+        0,
+        0,
+        SHM_STATUS_UPDATE_SIZE);
+    
+    if (pStatusUpdateSharedData == NULL) {
+        spdlog::error("MapViewOfFile failed: {}", GetLastError());
+        CloseHandle(hStatusUpdateMapFile);
+        hStatusUpdateMapFile = NULL;
+        return false;
+    }    
+
+    spdlog::info("Shared memory initialized successfully");
+    return true;
+}
+
+// Cleanup shared memory
+void cleanupSharedMemory() {
+    if (pMotorCommandSharedData != nullptr) {
+        UnmapViewOfFile(pMotorCommandSharedData);
+        if (hMotorCommandMapFile != NULL) {
+            CloseHandle(hMotorCommandMapFile);
+            hMotorCommandMapFile = NULL;
+        }
+        pMotorCommandSharedData = nullptr;
+        spdlog::info("Shared memory cleaned up");
+    }
+    if (pStatusUpdateSharedData != nullptr) {
+        UnmapViewOfFile(pStatusUpdateSharedData);
+        if (hStatusUpdateMapFile != NULL) {
+            CloseHandle(hStatusUpdateMapFile);
+            hStatusUpdateMapFile = NULL;
+        }
+        pStatusUpdateSharedData = nullptr;
+        spdlog::info("Shared memory cleaned up");
+    }
+}
+
+// Read motor command from shared memory
+bool readMotorCommand(MotorCommand& cmd) {
+    if (pMotorCommandSharedData == nullptr) {
+        return false;
+    }
+    
+    // Copy data atomically
+    memcpy(&cmd, pMotorCommandSharedData, sizeof(MotorCommand));
+    return true;
+}
+
+bool writeStatusUpdate(double x, double y, double z, std::string status) {
+    if (pStatusUpdateSharedData == nullptr){
+        return false;
+    }
+
+    StatusUpdate msg;
+
+    // Clear the status field first
+    memset(msg.status, 0, sizeof(msg.status));
+    
+    size_t copy_len = (std::min)(status.length(), size_t(5));
+    strncpy_s(msg.status, sizeof(msg.status), status.c_str(), copy_len);
+    msg.status[copy_len] = '\0';
+
+    // strncpy_s(msg.status, sizeof(msg.status), status.c_str(), _TRUNCATE);
+    spdlog::warn("Writing status {} to buffer", msg.status);
+    memset(msg.padding, 0, sizeof(msg.padding));
+    memcpy(pStatusUpdateSharedData, &msg, sizeof(StatusUpdate));
+
+    return true;
+}
+
 std::shared_ptr<spdlog::logger> create_dated_logger(bool make_default) {
     std::string log_dir = "../../logs/cpp";
-    std::filesystem::create_directories("log_dir");
+    std::filesystem::create_directories(log_dir);
 
     // Get current time
     auto now = std::chrono::system_clock::now();
@@ -193,9 +371,16 @@ public:
     DAQSystem daqSystem;
     DOUBLE_POSITION_ANGLES_RECORD currentPosition{};
 
+    const std::vector<std::string> stateNames = {
+        "START", "INIT", "READY", "MOVE", "ERR", "CLEANUP", "END"
+    };
 
     StateController() {
         current_state = START;
+    }
+
+    std::string currentStateToString() {
+        return stateNames[current_state];
     }
 
     // These are the ideal state transitions
@@ -230,9 +415,14 @@ public:
 
     bool initialize() {
         current_state = INIT;
+
+        // BEGIN REGION SHAREDMEMORY INIT
+        initSharedMemory();
+        writeStatusUpdate(currentPosition.x, currentPosition.y, currentPosition.z, currentStateToString());
+        // END REGION SHAREDMEMORY INIT
+
         // BEGIN REGION DAQ INIT
         spdlog::info("Initializing the daq...");
-        spdlog::info("NEW LOGGING TEST");
         DigitalConfig digiConfig = { "Dev1", "PFI0:2" };
         AnalogConfig analogConfig = {
             "Dev1", "ai0:2",
@@ -296,11 +486,13 @@ public:
         // END REGION LOADCELL INIT
 
         current_state = READY;
+        writeStatusUpdate(currentPosition.x, currentPosition.y, currentPosition.z, currentStateToString());
         return true;
     }
 
     void handleError() {
         current_state = ERR;
+        writeStatusUpdate(currentPosition.x, currentPosition.y, currentPosition.z, currentStateToString());
         ERR_FLG = 1;
         spdlog::error("User error");
         // Do other ERR stuff if necessary
@@ -337,15 +529,11 @@ public:
                     return false;
                     break;
                 }
-
-                spdlog::info("TS: [{}] {:8.3f} {:8.3f} {:8.3f} : {:8.3f} {:8.3f} {:8.3f}",
-                    sensorName,
-                    currentPosition.x, currentPosition.y, currentPosition.z,
-                    currentPosition.a, currentPosition.e, currentPosition.r);
             }
         }
         else {
             current_state = END;
+            writeStatusUpdate(currentPosition.x, currentPosition.y, currentPosition.z, currentStateToString());
         }
 
         return true;
@@ -353,60 +541,90 @@ public:
 
     void setMotorPositions() {
         current_state = MOVE;
+        writeStatusUpdate(currentPosition.x, currentPosition.y, currentPosition.z, currentStateToString());
         static const double DEADBAND = 3.0;
-        static const double REF_X = 0.0;
-        static const double REF_Y = 0.0;
-        static const double REF_Z = 0.0;
 
-        double dx = currentPosition.x - REF_X;
-        double dy = currentPosition.y - REF_Y;
-        double dz = currentPosition.z - REF_Z;
+        // Try to read shared memory command first
+        MotorCommand sharedCmd;
+        bool useSharedMemory = readMotorCommand(sharedCmd);
+        
+        if (useSharedMemory) {
+            if(sharedCmd.exit){
+                current_state = END;
+                return;
+            }
+            // Calculate motor positions from target coordinates
+            // If any of the targets are outside of the DEADBAND, we log and set message in write shared buffer
+            //  and skip this movement
+            if ((DEADBAND < sharedCmd.target_x < -DEADBAND) || (DEADBAND < sharedCmd.target_y < -DEADBAND) || (DEADBAND < sharedCmd.target_z < -DEADBAND)) {
+                spdlog::warn("SHM: Target cannot be reached, outside of DEADBAND.");
+            }
+            
+            // If all of the targets are inside of the DEADBAND, we can set the moves
+            motor_destination[0] = vMotors[0].mmToDynamixelUnits(sharedCmd.target_x);
+            motor_destination[1] = vMotors[0].mmToDynamixelUnits(sharedCmd.target_y);
+            motor_destination[2] = vMotors[0].mmToDynamixelUnits(sharedCmd.target_z);
+            spdlog::info("Motors: Motor positions set.");
+                        // Use shared memory commands
+            spdlog::info("SHM: Target ({:.2f}, {:.2f}, {:.2f}) -> Dest: [{:4d}, {:4d}, {:4d}]",
+                        sharedCmd.target_x, sharedCmd.target_y, sharedCmd.target_z,
+                        motor_destination[0], motor_destination[1], motor_destination[2]);
 
-        // X axis (motor 0): normal logic
-        if (dx > DEADBAND) {
-            motor_destination[0] = max_pos; // forward
-            setLEDState(daqSystem.digitalTask, LED::LEFT_BASE, LED_ON);
-        }
-        else if (dx < -DEADBAND) {
-            motor_destination[0] = min_pos; // backward
-            setLEDState(daqSystem.digitalTask, LED::LEFT_BASE, LED_ON);
-        }
-        else {
-            motor_destination[0] = neutral_pos; // neutral
-            setLEDState(daqSystem.digitalTask, LED::LEFT_BASE, LED_OFF);
-        }
+        } else {
+            static const double REF_X = 0.0;
+            static const double REF_Y = 0.0;
+            static const double REF_Z = 0.0;
 
-        // Y axis (motor 1): INVERTED logic
-        if (dy > DEADBAND) {
-            motor_destination[1] = min_pos; // backward (inverted)
-            setLEDState(daqSystem.digitalTask, LED::CENTER_BASE, LED_ON);
-        }
-        else if (dy < -DEADBAND) {
-            motor_destination[1] = max_pos; // forward (inverted)
-            setLEDState(daqSystem.digitalTask, LED::CENTER_BASE, LED_ON);
-        }
-        else {
-            motor_destination[1] = neutral_pos; // neutral
-            setLEDState(daqSystem.digitalTask, LED::CENTER_BASE, LED_OFF);
-        }
+            double dx = currentPosition.x - REF_X;
+            double dy = currentPosition.y - REF_Y;
+            double dz = currentPosition.z - REF_Z;
 
-        // Z axis (motor 2): normal logic
-        if (dz > DEADBAND) {
-            motor_destination[2] = max_pos; // forward
-            setLEDState(daqSystem.digitalTask, LED::RIGHT_BASE, LED_ON);
-        }
-        else if (dz < -DEADBAND) {
-            motor_destination[2] = min_pos; // backward
-            setLEDState(daqSystem.digitalTask, LED::RIGHT_BASE, LED_ON);
-        }
-        else {
-            motor_destination[2] = neutral_pos; // neutral
-            setLEDState(daqSystem.digitalTask, LED::RIGHT_BASE, LED_OFF);
-        }
+            // X axis (motor 0): normal logic
+            if (dx > DEADBAND) {
+                motor_destination[0] = max_pos; // forward
+                setLEDState(daqSystem.digitalTask, LED::LEFT_BASE, LED_ON);
+            }
+            else if (dx < -DEADBAND) {
+                motor_destination[0] = min_pos; // backward
+                setLEDState(daqSystem.digitalTask, LED::LEFT_BASE, LED_ON);
+            }
+            else {
+                motor_destination[0] = neutral_pos; // neutral
+                setLEDState(daqSystem.digitalTask, LED::LEFT_BASE, LED_OFF);
+            }
 
-        spdlog::info("dx: {:4.2f}, dy: {:4.2f}, dz: {:4.2f} | Dest: [{:4d}, {:4d}, {:4d}]",
-            dx, dy, dz,
-            motor_destination[0], motor_destination[1], motor_destination[2]);
+            // Y axis (motor 1): INVERTED logic
+            if (dy > DEADBAND) {
+                motor_destination[1] = min_pos; // backward (inverted)
+                setLEDState(daqSystem.digitalTask, LED::CENTER_BASE, LED_ON);
+            }
+            else if (dy < -DEADBAND) {
+                motor_destination[1] = max_pos; // forward (inverted)
+                setLEDState(daqSystem.digitalTask, LED::CENTER_BASE, LED_ON);
+            }
+            else {
+                motor_destination[1] = neutral_pos; // neutral
+                setLEDState(daqSystem.digitalTask, LED::CENTER_BASE, LED_OFF);
+            }
+            
+            // Z axis (motor 2): normal logic
+            if (dz > DEADBAND) {
+                motor_destination[2] = max_pos; // forward
+                setLEDState(daqSystem.digitalTask, LED::RIGHT_BASE, LED_ON);
+            }
+            else if (dz < -DEADBAND) {
+                motor_destination[2] = min_pos; // backward
+                setLEDState(daqSystem.digitalTask, LED::RIGHT_BASE, LED_ON);
+            }
+            else {
+                motor_destination[2] = neutral_pos; // neutral
+                setLEDState(daqSystem.digitalTask, LED::RIGHT_BASE, LED_OFF);
+            }
+            
+            spdlog::info("dx: {:4.2f}, dy: {:4.2f}, dz: {:4.2f} | Dest: [{:4d}, {:4d}, {:4d}]",
+                dx, dy, dz,
+                motor_destination[0], motor_destination[1], motor_destination[2]);
+        }
     }
 
     bool moveMotorPositions() {
@@ -430,7 +648,7 @@ public:
     bool readMotorPositions() {
         dxl_error = 0;
         dxl_comm_result = 0;
-        bool notAtPosition = true;
+        bool atPosition = true;
         do {
             // Sync read present position
 
@@ -451,7 +669,7 @@ public:
             }
 
             // Reset exitFlag to true at the start of each iteration
-            notAtPosition = true;
+            atPosition = true;
 
             for (int i = 0; i < MOTOR_CNT; i++) {
                 // Check if each motor is at its destination
@@ -460,25 +678,28 @@ public:
                 //        motor_destination[i], vMotors[i].checkAndGetPresentPosition(&groupSyncRead));
                 vMotors[i].checkAndGetPresentPosition(&groupSyncRead);
                 if (!vMotors[i].checkIfAtGoalPosition(motor_destination[i])) {
-                    notAtPosition = false;
+                    atPosition = false;
                 }
             }
 
             // Optional: Add a small delay to prevent tight looping
             // usleep(10000); // 10ms delay, adjust as needed
-        } while (notAtPosition); // Continue loop until all motors reach destination
+        } while (atPosition); // Continue loop until all motors reach destination
 
         current_state = READY;
+        
+        writeStatusUpdate(currentPosition.x, currentPosition.y, currentPosition.z, currentStateToString());
         return true;
     }
 
     bool cleanUp() {
         current_state = CLEANUP;
+        writeStatusUpdate(currentPosition.x, currentPosition.y, currentPosition.z, currentStateToString());
         setAllLEDs(daqSystem.digitalTask, LED_OFF);
         DAQStop(daqSystem.analogHandle);
         cleanupDAQSystem(daqSystem);
-
         groupSyncWrite.clearParam();
+        cleanupSharedMemory();
         for (auto motor : vMotors) {
             motor.disableTorque(packetHandler, portHandler);
         }
@@ -530,6 +751,11 @@ int main(int argc, char *argv[]) {
 
         // Calculate the motor positions from DEADBAND
         state_controller.setMotorPositions();
+
+        // End it if there was an error or we're just good to end
+        if (state_controller.current_state == END) {
+            return state_controller.cleanUp();
+        }
 
         // Try to move motors
         if (!state_controller.moveMotorPositions()) {
