@@ -3,7 +3,6 @@
 
 #include "../Dynamixel_SDK/dynamixel_sdk.h"
 
-
 #include <spdlog/spdlog.h>
 
 #define TORQUE_ENABLE                   1                   // Value for enabling the torque
@@ -17,64 +16,16 @@
 #define ADDR_LED                        65                  // Control table address is different in Dynamixel model
 
 // #define for various definitions for the DYNAMIXEL
-#define PROTOCOL_VERSION                2.0                 // See which protocol version is used in the DYNAMIXEL
-#define DEVICENAME                      "COM4"      // ex) Windows: "COM1"   Linux: "/dev/ttyUSB0" Mac: "/dev/tty.usbserial-*"
+#define PROTOCOL_VERSION 2.0                 // See which protocol version is used in the DYNAMIXEL
 
-
-
-#define BAUDRATE                        57600                // Baudrate of Dynamixel
-#define X_SERIES
-
-
-#ifdef X_SERIES
-#define ADDR_TORQUE_ENABLE 64
-#define ADDR_GOAL_POSITION 116
-#define ADDR_PRESENT_POSITION 132
-#define LEN_GOAL_POSITION 4
-#define LEN_PRESENT_POSITION 4
+#define ADDR_TORQUE_ENABLE         64
+#define ADDR_GOAL_POSITION         116
+#define ADDR_PRESENT_POSITION      132
+#define LEN_GOAL_POSITION          4
+#define LEN_PRESENT_POSITION       4
 #define DXL_MINIMUM_POSITION_VALUE 0
 #define DXL_MAXIMUM_POSITION_VALUE 4095
-#endif
 
-#ifdef MX_SERIES
-#define ADDR_TORQUE_ENABLE 64
-#define ADDR_GOAL_POSITION 116
-#define ADDR_PRESENT_POSITION 132
-#define LEN_GOAL_POSITION 4
-#define LEN_PRESENT_POSITION 4
-#define DXL_MINIMUM_POSITION_VALUE 0
-#define DXL_MAXIMUM_POSITION_VALUE 4095
-#endif
-
-#ifdef PRO_SERIES
-#define ADDR_TORQUE_ENABLE 562
-#define ADDR_GOAL_POSITION 596
-#define ADDR_PRESENT_POSITION 611
-#define LEN_GOAL_POSITION 4
-#define LEN_PRESENT_POSITION 4
-#define DXL_MINIMUM_POSITION_VALUE -150000
-#define DXL_MAXIMUM_POSITION_VALUE 150000
-#endif
-
-#ifdef P_SERIES
-#define ADDR_TORQUE_ENABLE 512
-#define ADDR_GOAL_POSITION 564
-#define ADDR_PRESENT_POSITION 580
-#define LEN_GOAL_POSITION 4
-#define LEN_PRESENT_POSITION 4
-#define DXL_MINIMUM_POSITION_VALUE -150000
-#define DXL_MAXIMUM_POSITION_VALUE 150000
-#endif
-
-#ifdef PRO_A_SERIES
-#define ADDR_TORQUE_ENABLE 512
-#define ADDR_GOAL_POSITION 564
-#define ADDR_PRESENT_POSITION 580
-#define LEN_GOAL_POSITION 4
-#define LEN_PRESENT_POSITION 4
-#define DXL_MINIMUM_POSITION_VALUE -150000
-#define DXL_MAXIMUM_POSITION_VALUE 150000
-#endif
 
 
 struct DynamixelMotor {

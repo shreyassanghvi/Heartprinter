@@ -215,7 +215,7 @@ bool SharedMemoryManager::writeStatusUpdate(double x, double y, double z, const 
         msg.current_y = y;
         msg.current_z = z;
         
-        size_t copy_len = min(status.length(), size_t(5));
+        size_t copy_len = std::min(status.length(), size_t(5));
         strncpy_s(msg.status, sizeof(msg.status), status.c_str(), copy_len);
         msg.status[copy_len] = '\0';
         

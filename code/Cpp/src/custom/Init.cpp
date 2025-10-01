@@ -23,13 +23,6 @@
 
 namespace fs = std::filesystem;
 
-// #define for various definitions for the DYNAMIXEL
-#define PROTOCOL_VERSION                2.0                 // See which protocol version is used in the DYNAMIXEL
-// #define DEVICENAME                      "COM4"      // ex) Windows: "COM1"   Linux: "/dev/ttyUSB0" Mac: "/dev/tty.usbserial-*"
-
-
-// #define BAUDRATE                        57600
-
 //user defined #define
 #define RECORD_CNT                          10000                 // Number of records to collect
 #define MOTOR_CNT                           3                  // Number of motors to control

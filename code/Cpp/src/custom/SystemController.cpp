@@ -37,9 +37,9 @@ SystemController::SystemController(const SystemConfig& config)
 
     // Initialize motor control variables
     minPos = DXL_MINIMUM_POSITION_VALUE;
-    maxPos = static_cast<int>(DXL_MAXIMUM_POSITION_VALUE * 1.5);
+    maxPos = static_cast<int>(DXL_MAXIMUM_POSITION_VALUE);
     neutralPos = (minPos + maxPos) / 2;
-    motorDestinations.resize(MOTOR_CNT, 0);
+    motorDestinations.resize(MOTOR_CNT, neutralPos);
 
     // Create shared memory manager
     sharedMemory = std::make_unique<SharedMemoryManager>();
@@ -197,7 +197,7 @@ bool SystemController::initializeDAQ() {
 // Initialize motors using direct Motor objects (self-contained)
 bool SystemController::initializeMotors() {
     spdlog::info("Initializing motor controllers...");
-    
+    int caliberationDestination[] = {minPos, maxPos, neutralPos};
     try {
         // Open port
         if (!portHandler->openPort()) {
@@ -233,53 +233,32 @@ bool SystemController::initializeMotors() {
                 spdlog::error("Failed to enable torque for motor {}", i);
                 return false;
             }
-            
         }
-        
-        groupSyncWrite.clearParam();
-        for (int i = 0; i < MOTOR_CNT; i++) {
-            // Set initial position to maximum
-            if (!motors[i].setMotorDestination(&groupSyncWrite, DXL_MAXIMUM_POSITION_VALUE)) {
-                spdlog::error("Failed to set initial MIN position for motor {}", i);
+        for (int calCycle = 0; calCycle< 3; calCycle++) {
+            groupSyncWrite.clearParam();
+            for (int i = 0; i < MOTOR_CNT; i++) {
+                // Set initial position to maximum
+                if (!motors[i].setMotorDestination(&groupSyncWrite, caliberationDestination[calCycle])) {
+                    spdlog::error("Failed to set to {} position for motor {}", caliberationDestination[calCycle], i);
+                    return false;
+                }
+            }
+            int dxl_comm_result = groupSyncWrite.txPacket();
+            if (dxl_comm_result != COMM_SUCCESS) {
+                spdlog::error("Failed to execute {} motor positioning: {}",caliberationDestination[calCycle],  packetHandler->getTxRxResult(dxl_comm_result));
                 return false;
             }
-        }
-        
-        // TOOD: Move all of this to CALIBRATION state
-        // Execute initial position setting
-        int dxl_comm_result = groupSyncWrite.txPacket();
-        if (dxl_comm_result != COMM_SUCCESS) {
-            spdlog::error("Failed to execute initial MAX motor positioning: {}", packetHandler->getTxRxResult(dxl_comm_result));
-            return false;
-        }
-
-        while(!motors[0].checkIfAtGoalPosition(DXL_MAXIMUM_POSITION_VALUE)){
-            motors[0].checkAndGetPresentPosition(&groupSyncRead);
-            spdlog::info("Waiting to reach MAX position");
-        }
-        
-        groupSyncWrite.clearParam();
-        for (int i = 0; i < MOTOR_CNT; i++) {
-            // Set initial position to maximum
-            if (!motors[i].setMotorDestination(&groupSyncWrite, DXL_MINIMUM_POSITION_VALUE)) {
-                spdlog::error("Failed to set initial MIN position for motor {}", i);
-                return false;
+            uint8_t dxl_error = 0;
+            if (motors[0].checkAndGetPresentPosition(&groupSyncRead)== EXIT_FAILURE) {
+                printf("%s\n", packetHandler->getRxPacketError(dxl_error));
+            }
+            while(!motors[0].checkIfAtGoalPosition(caliberationDestination[calCycle])){
+                motors[0].checkAndGetPresentPosition(&groupSyncRead);
+                spdlog::info("Waiting to reach {} position", caliberationDestination[calCycle]);
             }
         }
-        
-        // Execute initial position setting
-        dxl_comm_result = groupSyncWrite.txPacket();
-        if (dxl_comm_result != COMM_SUCCESS) {
-            spdlog::error("Failed to execute initial MIN motor positioning: {}", packetHandler->getTxRxResult(dxl_comm_result));
-            return false;
-        }
 
-        while(!motors[0].checkIfAtGoalPosition(DXL_MINIMUM_POSITION_VALUE)){
-            motors[0].checkAndGetPresentPosition(&groupSyncRead);
-            spdlog::info("Waiting to reach MIN position");
-        }
-        
-        groupSyncWrite.clearParam();
+
         spdlog::info("Motor controllers initialized successfully - torque enabled");
         return true;
         
@@ -810,8 +789,6 @@ bool SystemController::readMotorPositions() {
             }
             return false;
         }
-
-
 
         bool allReached = true;
         
