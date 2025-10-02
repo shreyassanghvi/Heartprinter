@@ -130,7 +130,7 @@ bool SystemController::initializeDAQ() {
         analogConf.channel = "ai0:2";
         analogConf.minVoltage = 0.0;
         analogConf.maxVoltage = 10.0;
-        analogConf.sampleRate = 10000.0;
+        analogConf.sampleRate = 1000.0;
         analogConf.samplesPerCallback = 1000;
 
         // Create DAQ system
