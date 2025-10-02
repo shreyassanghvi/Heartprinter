@@ -333,7 +333,6 @@ DAQSystem initDAQSystem(const DigitalConfig &digiConfig,
         system.digitalTask = nullptr;
         system.analogHandle = nullptr;
     }
-
     return system;
 }
 

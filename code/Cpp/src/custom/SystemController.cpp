@@ -658,7 +658,7 @@ bool SystemController::readSharedMemoryCommand(MotorCommand& cmd) {
 
 // Calculate motor positions from shared memory command
 void SystemController::calculateMotorPositionsFromCommand(const MotorCommand& cmd) {
-    static const double DEADBAND = 30.0;
+    static const double DEADBAND = 300.0;
     if ((DEADBAND < cmd.target_x < -DEADBAND) ||
         (DEADBAND < cmd.target_y < -DEADBAND) ||
         (DEADBAND < cmd.target_z < -DEADBAND)) {
@@ -736,25 +736,6 @@ bool SystemController::moveMotorPositions() {
     }
     
     try {
-
-
-        groupSyncWrite.clearParam();
-        for (int i = 0; i < MOTOR_CNT; i++) {
-            motorDestinations[i] = caliberationDestination[calCycle];
-            if (!motors[i].setMotorDestination(&groupSyncWrite, motorDestinations[i])) {
-                spdlog::error("Failed to set to {} position for motor {}", motorDestinations[i], i);
-                return false;
-            }
-        }
-
-        int dxl_comm_result = groupSyncWrite.txPacket();
-        if (dxl_comm_result != COMM_SUCCESS) {
-            spdlog::error("Failed to execute movement to {} motor position: {}", caliberationDestination[calCycle],  packetHandler->getTxRxResult(dxl_comm_result));
-            return false;
-        }
-        while(!this->readMotorPositions()) {
-            ;
-        }
 
         // Use the group sync write
         for (int j = 0; j < MOTOR_CNT && j < static_cast<int>(motors.size()); j++) {
