@@ -10,6 +10,8 @@
 #include <vector>
 #include <stdexcept>
 #include <functional>
+#include <mutex>
+#include <atomic>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -115,7 +117,12 @@ private:
     int minPos = 0;
     int maxPos = 0;
     int neutralPos = 0;
-    
+
+    // DAQ channel averages (thread-safe access from callback)
+    mutable std::mutex daqDataMutex;
+    std::atomic<bool> daqDataAvailable{false};
+    double daqChannelAverages[3] = {0.0, 0.0, 0.0};
+
     // Internal methods
     bool initializeHardware();
     bool initializeMotors();
@@ -163,7 +170,8 @@ public:
     bool setLEDState(int led, bool state);
     bool setAllLEDs(bool state);
     bool stopAnalogAcquisition();
-    
+    bool getDAQChannelAverages(double averages[3]) const;
+
     // Status and monitoring
     SystemStatus getSystemStatus() const;
     bool isInitialized() const { return initialized; }

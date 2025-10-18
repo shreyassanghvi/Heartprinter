@@ -8,14 +8,12 @@
 #include "../../include/custom/NIDAQ.h"
 #include "../../include/custom/SharedMemoryManager.h"
 #include "../../include/Trackstar/ATC3DG.h"
-#include "../dynamixel_sdk/DynamixelSDK.h"
 
 #include <spdlog/spdlog.h>
 #include <chrono>
 #include <thread>
 #include <cmath>
 #include <functional>
-#include <cstring>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -24,7 +22,8 @@
 // Motor system constants
 #define MOTOR_CNT 3
 
-// Dynamixel SDK global variables (moved from Init.cpp)
+// Static pointer for DAQ callback access
+static SystemController* g_systemControllerInstance = nullptr;
 
 // Constructor
 SystemController::SystemController(const SystemConfig& config)
@@ -44,11 +43,18 @@ SystemController::SystemController(const SystemConfig& config)
     // Create shared memory manager
     sharedMemory = std::make_unique<SharedMemoryManager>();
 
+    // Set global instance for DAQ callback
+    g_systemControllerInstance = this;
 }
 
 // Destructor - RAII cleanup
 SystemController::~SystemController() {
     try {
+        // Clear global instance pointer
+        if (g_systemControllerInstance == this) {
+            g_systemControllerInstance = nullptr;
+        }
+
         if (currentState != States::END) {
             shutdown();
         }
@@ -137,25 +143,42 @@ bool SystemController::initializeDAQ() {
         daqSystem = std::make_unique<DAQSystem>();
         *daqSystem = initDAQSystem(digitalConf, analogConf,
            [](double* data, uInt32 numSamples) {
-               // Static callback wrapper - would need instance access
+               // Static callback wrapper - accesses SystemController via global pointer
                try {
-                       if (!data || numSamples == 0) {
-                           spdlog::warn("Invalid data or sample count in DataHandler!");
-                           return;
-                       }
-                       // printf("Test\n");
-                       // printf("Received %u samples. First: %.3f\n", numSamples, data[0]);
-                       // if (data == nullptr) {
-                       //     printf("No data\n");
-                       //     return;
-                       // }
-                       std::vector vData(data, data + numSamples);
-                       spdlog::info("DAQ - Sample Count: {} - Received Data[0] - {:8.5f}",
-                                    numSamples,
-                                    data[0]);
-                   } catch (std::exception &e) {
-                       spdlog::error("Error: {}", e.what());
+                   if (!data || numSamples == 0) {
+                       spdlog::warn("Invalid data or sample count in DataHandler!");
+                       return;
                    }
+
+                   spdlog::info("DAQ - Total data points: {}", sizeof(data));
+
+                   // Assuming that the data is interleaved [channel1, channel2, channel3, ... channel1, channel2, channel3]
+                   const uInt32 numChannels = 3;  // ai0:2 = 3 channels
+
+                   // Calculate average for each channel
+                   double channelAverages[numChannels] = {0.0, 0.0, 0.0};
+
+                   for (uInt32 i = 0; i < numSamples; i++) {
+                       for (uInt32 ch = 0; ch < numChannels; ch++) {
+                           channelAverages[ch] += data[i * numChannels + ch] / numSamples;
+                       }
+                   }
+
+                   // Store in SystemController instance (thread-safe)
+                   if (g_systemControllerInstance) {
+                       std::lock_guard<std::mutex> lock(g_systemControllerInstance->daqDataMutex);
+                       for (uInt32 ch = 0; ch < numChannels; ch++) {
+                           g_systemControllerInstance->daqChannelAverages[ch] = channelAverages[ch];
+                       }
+                       g_systemControllerInstance->daqDataAvailable = true;
+                   }
+
+                   spdlog::info("DAQ - Samples/Ch: {} - Avg[Ch0]: {:8.5f}, Avg[Ch1]: {:8.5f}, Avg[Ch2]: {:8.5f}",
+                       numSamples,
+                       channelAverages[0], channelAverages[1], channelAverages[2]);
+               } catch (std::exception &e) {
+                   spdlog::error("Error: {}", e.what());
+               }
            },
            [](const char* errorMessage) {
                spdlog::error("DAQ Error: {}", errorMessage);
@@ -397,10 +420,11 @@ States SystemController::processStateTransition(States current) {
 
         case States::RUNNING:
             // Check for safety conditions
-            // if (!performSafetyCheck(currentPosition)) {
-            //     spdlog::warn("Safety check failed - entering error state");
-            //     return States::ERR;
-            // }
+            if (!performSafetyCheck(currentPosition)) {
+                spdlog::warn("Safety check failed - tension outside of normal bounds.");
+                // TODO: Adjust the motor positions? We need to relieve or increase tension.
+                //  Should this be a different function? executeTensionAdjustment?
+            }
 
             // Check if motors are moving
             if (!readMotorPositions()) {
@@ -417,10 +441,11 @@ States SystemController::processStateTransition(States current) {
             }
 
             // Check for safety conditions while moving
-            // if (!performSafetyCheck(currentPosition)) {
-            //     spdlog::warn("Safety check failed while moving - stopping");
-            //     return States::ERR;
-            // }
+            if (!performSafetyCheck(currentPosition)) {
+                spdlog::warn("Safety check failed - tension outside of normal bounds.");
+                // TODO: Adjust the motor positions? We need to relieve or increase tension.
+                //  Should this be a different function? executeTensionAdjustment?
+            }
 
             return States::MOVING;
 
@@ -444,17 +469,34 @@ bool SystemController::performSafetyCheck(const DOUBLE_POSITION_ANGLES_RECORD& t
     if (!config.enableSafetyChecks) {
         return true;
     }
-    
-    // Basic position limits (adjust as needed)
-    const double MAX_POSITION = 100.0;  // mm
-    const double MIN_POSITION = -100.0; // mm
-    
-    if (std::abs(targetPos.x) > MAX_POSITION ||
-        std::abs(targetPos.y) > MAX_POSITION ||
-        std::abs(targetPos.z) > MAX_POSITION) {
-        return false;
+
+    // Check DAQ channel averages (load cells)
+    double channelAverages[3];
+    if (getDAQChannelAverages(channelAverages)) {
+        // TODO: Adjust/configure this appropriately.
+        const double MAX_LOAD_VOLTAGE = 100.0;
+        const double MIN_LOAD_VOLTAGE = 0.0;
+
+        for (int i = 0; i < 3; i++) {
+            if (channelAverages[i] > MAX_LOAD_VOLTAGE) {
+                spdlog::warn("Safety: Load cell {} overload detected: {:.3f}V > {:.3f}V",
+                           i, channelAverages[i], MAX_LOAD_VOLTAGE);
+                return false;
+            }
+
+            if (channelAverages[i] < MIN_LOAD_VOLTAGE) {
+                spdlog::warn("Safety: Load cell {} may be disconnected: {:.3f}V < {:.3f}V",
+                           i, channelAverages[i], MIN_LOAD_VOLTAGE);
+                return false;
+            }
+        }
+
+        spdlog::debug("Safety: Load cells OK - Ch0:{:.3f}V Ch1:{:.3f}V Ch2:{:.3f}V",
+                    channelAverages[0], channelAverages[1], channelAverages[2]);
+    } else {
+        spdlog::debug("Safety: DAQ data not yet available, skipping load cell check");
     }
-    
+
     return true;
 }
 
@@ -517,7 +559,7 @@ bool SystemController::stopAnalogAcquisition() {
     if (!daqSystem || !daqSystem->initialized) {
         return true;
     }
-    
+
     try {
         int result = DAQStop(daqSystem->analogHandle);
         return (result == 0);
@@ -527,6 +569,23 @@ bool SystemController::stopAnalogAcquisition() {
     }
 }
 
+// Get DAQ channel averages (thread-safe)
+bool SystemController::getDAQChannelAverages(double averages[3]) const {
+    if (!daqDataAvailable) {
+        return false;  // No data available yet
+    }
+
+    try {
+        std::lock_guard<std::mutex> lock(daqDataMutex);
+        for (int i = 0; i < 3; i++) {
+            averages[i] = daqChannelAverages[i];
+        }
+        return true;
+    } catch (const std::exception& e) {
+        spdlog::error("Exception reading DAQ channel averages: {}", e.what());
+        return false;
+    }
+}
 
 // Shutdown system
 void SystemController::shutdown() {
@@ -595,12 +654,6 @@ SystemStatus SystemController::getSystemStatus() const {
     return status;
 }
 
-// Check if position is in safe zone
-bool SystemController::isInSafeZone(double x, double y, double z) const {
-    DOUBLE_POSITION_ANGLES_RECORD pos = {x, y, z, 0.0, 0.0, 0.0};
-    return performSafetyCheck(pos);
-}
-
 // Move to target position
 bool SystemController::moveToTarget(const DOUBLE_POSITION_ANGLES_RECORD& target) {
     if (!performSafetyCheck(target)) {
@@ -659,9 +712,9 @@ bool SystemController::readSharedMemoryCommand(MotorCommand& cmd) {
 // Calculate motor positions from shared memory command
 void SystemController::calculateMotorPositionsFromCommand(const MotorCommand& cmd) {
     static const double DEADBAND = 300.0;
-    if ((DEADBAND < cmd.target_x < -DEADBAND) ||
-        (DEADBAND < cmd.target_y < -DEADBAND) ||
-        (DEADBAND < cmd.target_z < -DEADBAND)) {
+    if ((std::abs(cmd.target_x) < DEADBAND) ||
+        (std::abs(cmd.target_y) < DEADBAND) ||
+        (std::abs(cmd.target_z) < DEADBAND)) {
         spdlog::warn("SHM: Target cannot be reached, outside of DEADBAND.");
     }
 
@@ -679,14 +732,11 @@ void SystemController::calculateMotorPositionsFromCommand(const MotorCommand& cm
 
 // Calculate motor positions from tracking data
 void SystemController::calculateMotorPositionsFromTracking() {
-    static const double DEADBAND = 3.0;
-    static const double REF_X = 0.0;
-    static const double REF_Y = 0.0;
-    static const double REF_Z = 0.0;
+    static const double DEADBAND = 300.0;
 
-    double dx = currentPosition.x - REF_X;
-    double dy = currentPosition.y - REF_Y;
-    double dz = currentPosition.z - REF_Z;
+    double dx = currentPosition.x;
+    double dy = currentPosition.y;
+    double dz = currentPosition.z;
 
     // X axis (motor 0): normal logic
     if (dx > DEADBAND) {
