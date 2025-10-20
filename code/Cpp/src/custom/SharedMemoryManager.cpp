@@ -189,7 +189,7 @@ bool SharedMemoryManager::readMotorCommand(MotorCommand& command) {
     if (!pMotorCommandSharedData) {
         return false;
     }
-    
+
     try {
         memcpy(&command, pMotorCommandSharedData, sizeof(MotorCommand));
         return true;
@@ -199,8 +199,8 @@ bool SharedMemoryManager::readMotorCommand(MotorCommand& command) {
     }
 }
 
-// Clear motor command from shared memory
-bool SharedMemoryManager::clearMotorCommand() {
+// Write motor command to shared memory
+bool SharedMemoryManager::writeMotorCommand(const MotorCommand& command) {
     if (!initialized) {
         return false;
     }
@@ -210,12 +210,12 @@ bool SharedMemoryManager::clearMotorCommand() {
     }
 
     try {
-        // Zero out the entire motor command structure
-        std::memset(pMotorCommandSharedData, 0, sizeof(MotorCommand));
-        spdlog::debug("Motor command cleared from shared memory");
+        memcpy(pMotorCommandSharedData, &command, sizeof(MotorCommand));
+        spdlog::debug("Motor command written to shared memory (execute={}, exit={})",
+                     command.execute, command.exit);
         return true;
     } catch (const std::exception& e) {
-        spdlog::error("Exception clearing motor command: {}", e.what());
+        spdlog::error("Exception writing motor command: {}", e.what());
         return false;
     }
 }

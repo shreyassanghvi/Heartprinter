@@ -20,9 +20,10 @@ class MotorCommand:
     target_x: float
     target_y: float
     target_z: float
+    execute: bool
     exit: bool
 
-MOTOR_STRUCT_FORMAT = 'ddd?6x'
+MOTOR_STRUCT_FORMAT = 'ddd??5x'
 MOTOR_STRUCT_SIZE = struct.calcsize(MOTOR_STRUCT_FORMAT)
 
 @dataclass
@@ -411,7 +412,7 @@ class MainWindow(QWidget):
         if not self.write_shm:
             return
         try:
-            data = struct.pack(MOTOR_STRUCT_FORMAT, self.target_pos[0], self.target_pos[1], self.target_pos[2], end_flag)
+            data = struct.pack(MOTOR_STRUCT_FORMAT, self.target_pos[0], self.target_pos[1], self.target_pos[2], True, end_flag)
             self.write_shm.buf[:MOTOR_STRUCT_SIZE] = data
         except Exception as e:
             print(f"Write error: {e}")

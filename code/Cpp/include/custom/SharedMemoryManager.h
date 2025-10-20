@@ -15,10 +15,11 @@
 // Shared memory structures
 struct MotorCommand {
     double target_x;
-    double target_y; 
+    double target_y;
     double target_z;
+    bool execute;
     bool exit;
-    char padding[6];
+    char padding[5];
 };
 
 struct StatusUpdate {
@@ -48,7 +49,7 @@ public:
     // Command reading
     bool readMotorCommand(MotorCommand& command);
 
-    bool clearMotorCommand();
+    bool writeMotorCommand(const MotorCommand& command);
     
     // Status writing
     bool writeStatusUpdate(double x, double y, double z, const std::string& status);
