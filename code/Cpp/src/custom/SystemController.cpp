@@ -712,9 +712,9 @@ bool SystemController::readSharedMemoryCommand(MotorCommand& cmd) {
 // Calculate motor positions from shared memory command
 void SystemController::calculateMotorPositionsFromCommand(const MotorCommand& cmd) {
     static const double DEADBAND = 300.0;
-    if ((std::abs(cmd.target_x) < DEADBAND) ||
-        (std::abs(cmd.target_y) < DEADBAND) ||
-        (std::abs(cmd.target_z) < DEADBAND)) {
+    if ((std::abs(cmd.target_x) > DEADBAND) ||
+        (std::abs(cmd.target_y) > DEADBAND) ||
+        (std::abs(cmd.target_z) > DEADBAND)) {
         spdlog::warn("SHM: Target cannot be reached, outside of DEADBAND.");
     }
 
