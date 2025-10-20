@@ -706,7 +706,9 @@ bool SystemController::readSharedMemoryCommand(MotorCommand& cmd) {
     sharedMemory->writeStatusUpdate(currentPosition.x, currentPosition.y, currentPosition.z, currentStateToString());
 
     // Try to read shared memory command
-    return sharedMemory->readMotorCommand(cmd);
+    bool success = sharedMemory->readMotorCommand(cmd);
+    sharedMemory->clearMotorCommand();
+    return success;
 }
 
 // Calculate motor positions from shared memory command

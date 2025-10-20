@@ -47,6 +47,8 @@ public:
     
     // Command reading
     bool readMotorCommand(MotorCommand& command);
+
+    bool clearMotorCommand();
     
     // Status writing
     bool writeStatusUpdate(double x, double y, double z, const std::string& status);
