@@ -86,6 +86,10 @@ int main(int argc, char *argv[]) {
         config.baudRate = 57600;
         config.recordCount = 1000;
         config.enableSafetyChecks = true;
+        config.maxLoadVoltage = 50.0;
+        config.minLoadVoltage = 0.0;
+        config.tensionAdjustmentSteps = 10;
+        config.trackingDeadband = 300.0;
 
         // Create and initialize system controller
         spdlog::info("Construct systemcontroller");
