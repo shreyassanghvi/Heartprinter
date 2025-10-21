@@ -108,10 +108,9 @@ int Motor::disableTorque(dynamixel::PacketHandler *packetHandler, dynamixel::Por
 bool Motor::setMotorDestination(dynamixel::GroupSyncWrite *groupSyncWrite, double goalPosition) const {
     //TODO: add parameter check
     // Allocate goal position value into byte array
+
     if (groupSyncWrite == nullptr) {
         spdlog::error("[ID:{:3d}] groupSyncWrite addparam failed: null", this->getMotorID());
-        // sprintf(buffer, "[ID:%03d] groupSyncWrite addparam failed: null", this->getMotorID());
-        // printLog(LOG_ERROR, buffer);
         return false;
     }
     uint8_t param_goal_position[4];
@@ -127,19 +126,34 @@ bool Motor::setMotorDestination(dynamixel::GroupSyncWrite *groupSyncWrite, doubl
 }
 
 uint32_t Motor::checkAndGetPresentPosition(dynamixel::GroupSyncRead *groupSyncRead) {
+    groupSyncRead->addParam(this->getMotorID());
+
+    int dxl_comm_result = groupSyncRead->txRxPacket();
+    uint8_t dxl_error = 0;
+    if (dxl_comm_result != COMM_SUCCESS) {
+        spdlog::debug("dxl_comm_result: {}", dxl_comm_result);
+        if (groupSyncRead->getError(this->getMotorID(), &dxl_error)) {
+            spdlog::debug("dxl_error: {}", dxl_error);
+            // spdlog::error("[ID:{:3d}] {}\n", this->getMotorID(),
+            //               packetHandler->getRxPacketError(dxl_error));
+        }
+    }
+
     //TODO: add parameter check
+
     if (groupSyncRead->
         isAvailable(this->getMotorID(), ADDR_PRESENT_POSITION, LEN_PRESENT_POSITION) != true) {
-        spdlog::error("[ID:{:3d}] groupSyncRead getdata failed", this->getMotorID());
+        spdlog::debug("[ID:{:3d}] groupSyncRead getdata failed", this->getMotorID());
         return EXIT_FAILURE;
     }
     this->motor.DXL_PRESENT_POSITION_VALUE = groupSyncRead->getData(this->getMotorID(), ADDR_PRESENT_POSITION,
                                                                     LEN_PRESENT_POSITION);
+    // groupSyncRead->clearParam();
     return this->motor.DXL_PRESENT_POSITION_VALUE;
 }
 
 bool Motor::checkIfAtGoalPosition(int goalPosition) const {
-    return (abs(this->motor.DXL_PRESENT_POSITION_VALUE - goalPosition) > DXL_MOVING_STATUS_THRESHOLD);
+    return (abs(this->motor.DXL_PRESENT_POSITION_VALUE - goalPosition) <= DXL_MOVING_STATUS_THRESHOLD);
 }
 
 int Motor::setMotorOperationMode(dynamixel::PacketHandler *packetHandler, dynamixel::PortHandler *portHandler,
@@ -194,7 +208,7 @@ void Motor::ledOperationMode(dynamixel::PacketHandler *packetHandler, dynamixel:
 
 double Motor::mmToDynamixelUnits(double mm) const {
     double steps_per_mm = 4096.0 / (M_PI * this->pulley_diameter_mm);
-    spdlog::trace("Steps converted from {}mm: {:.4f}revs", mm, mm*steps_per_mm);
+    spdlog::trace("Steps converted from {}mm: {:.4f}revs", mm, mm * steps_per_mm);
 
     return mm * steps_per_mm;
 }
