@@ -178,7 +178,7 @@ void *DAQ_Init(const AnalogConfig &config, const DataCallback dataCB, const Erro
     char chanSpec[100];
     snprintf(chanSpec, sizeof(chanSpec), "%s/%s", config.device, config.channel);
     DAQmxErrChk(DAQmxCreateAIVoltageChan(ctx->taskHandle, chanSpec, "",
-        DAQmx_Val_Cfg_Default, config.minVoltage,
+        DAQmx_Val_Diff, config.minVoltage,
         config.maxVoltage, DAQmx_Val_Volts, nullptr));
 
     // Query number of channels

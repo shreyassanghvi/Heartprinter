@@ -134,8 +134,8 @@ bool SystemController::initializeDAQ() {
         AnalogConfig analogConf;
         analogConf.device = "Dev1";
         analogConf.channel = "ai0:2";
-        analogConf.minVoltage = 0.0;
-        analogConf.maxVoltage = 10.0;
+        analogConf.minVoltage = -3;
+        analogConf.maxVoltage = 2;
         analogConf.sampleRate = 1000.0;
         analogConf.samplesPerCallback = 1000;
 
