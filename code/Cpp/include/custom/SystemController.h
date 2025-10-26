@@ -68,8 +68,8 @@ struct SystemConfig {
 
     // Safety configuration
     bool enableSafetyChecks = true;
-    double maxLoadVoltage = 100.0;      // Maximum safe load cell voltage
-    double minLoadVoltage = 0.0;        // Minimum expected load cell voltage
+    double maxLoadVoltage = -0.5;      // Maximum safe load cell voltage
+    double minLoadVoltage = -1.0;        // Minimum expected load cell voltage
 
     // Tension adjustment configuration
     int tensionAdjustmentSteps = 2;     // Number of motor steps to adjust tension (1-2 recommended)

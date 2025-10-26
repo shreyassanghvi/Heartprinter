@@ -883,16 +883,18 @@ bool SystemController::adjustTensionBasedOnLoadCells() {
     for (int i = 0; i < 3; i++) {
         int adjustment = 0;
 
+        // This logic is a bit confusing because larger negative values are larger loads.
         // Check if load is too high (overload)
-        if (channelAverages[i] > config.maxLoadVoltage) {
+        // Too high means that it is lower than -1.4V
+        if (channelAverages[i] < config.minLoadVoltage) {
             // Relieve tension by moving motor to decrease cable tension
-            // For a cable system, moving toward neutralPos typically relieves tension
             adjustment = -config.tensionAdjustmentSteps;
             spdlog::info("Motor {} overload ({:.3f}V > {:.3f}V) - relieving tension by {} steps",
                        i, channelAverages[i], config.maxLoadVoltage, -adjustment);
         }
         // Check if load is too low (potential sensor issue or slack cable)
-        else if (channelAverages[i] < config.minLoadVoltage) {
+        // Too low means that it is higher than -0.5V
+        else if (channelAverages[i] > config.maxLoadVoltage) {
             // Increase tension by moving motor to tighten cable
             adjustment = config.tensionAdjustmentSteps;
             spdlog::info("Motor {} underload ({:.3f}V < {:.3f}V) - increasing tension by {} steps",
