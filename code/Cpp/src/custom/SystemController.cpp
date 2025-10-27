@@ -134,8 +134,8 @@ bool SystemController::initializeDAQ() {
         AnalogConfig analogConf;
         analogConf.device = "Dev1";
         analogConf.channel = "ai0:2";
-        analogConf.minVoltage = -3;
-        analogConf.maxVoltage = 2;
+        analogConf.minVoltage = -10;
+        analogConf.maxVoltage = 10;
         analogConf.sampleRate = 1000.0;
         analogConf.samplesPerCallback = 1000;
 
@@ -149,8 +149,6 @@ bool SystemController::initializeDAQ() {
                        spdlog::warn("Invalid data or sample count in DataHandler!");
                        return;
                    }
-
-                   spdlog::info("DAQ - Total data points: {}", sizeof(data));
 
                    // Assuming that the data is interleaved [channel1, channel2, channel3, ... channel1, channel2, channel3]
                    const uInt32 numChannels = 3;  // ai0:2 = 3 channels
@@ -168,6 +166,7 @@ bool SystemController::initializeDAQ() {
                    if (g_systemControllerInstance) {
                        std::lock_guard<std::mutex> lock(g_systemControllerInstance->daqDataMutex);
                        for (uInt32 ch = 0; ch < numChannels; ch++) {
+                           spdlog::info("DAQ Channel {} Average Value {}", ch, channelAverages[ch]);
                            g_systemControllerInstance->daqChannelAverages[ch] = channelAverages[ch];
                        }
                        g_systemControllerInstance->daqDataAvailable = true;
@@ -200,8 +199,7 @@ bool SystemController::initializeDAQ() {
             return false;
         }
 
-        // TODO: maybe move into a separate function
-        spdlog::warn("TODO: Initializing load cell...");
+        spdlog::info("Initializing load cell.");
         if (DAQStart(daqSystem->analogHandle) != 0){
             return false;
         }
@@ -255,25 +253,27 @@ bool SystemController::initializeMotors() {
                 return false;
             }
         }
-        for (int calCycle = 0; calCycle< 3; calCycle++) {
-            groupSyncWrite.clearParam();
-            for (int i = 0; i < MOTOR_CNT; i++) {
-                motorDestinations[i] = caliberationDestination[calCycle];
-                if (!motors[i].setMotorDestination(&groupSyncWrite, motorDestinations[i])) {
-                    spdlog::error("Failed to set to {} position for motor {}", motorDestinations[i], i);
-                    return false;
-                }
-            }
 
-            int dxl_comm_result = groupSyncWrite.txPacket();
-            if (dxl_comm_result != COMM_SUCCESS) {
-                spdlog::error("Failed to execute movement to {} motor position: {}", caliberationDestination[calCycle],  packetHandler->getTxRxResult(dxl_comm_result));
-                return false;
-            }
-            while(!this->readMotorPositions()) {
-                ;
-            }
-        }
+        // TODO: Remove this because its deprecated
+        // for (int calCycle = 0; calCycle< 3; calCycle++) {
+        //     groupSyncWrite.clearParam();
+        //     for (int i = 0; i < MOTOR_CNT; i++) {
+        //         motorDestinations[i] = caliberationDestination[calCycle];
+        //         if (!motors[i].setMotorDestination(&groupSyncWrite, motorDestinations[i])) {
+        //             spdlog::error("Failed to set to {} position for motor {}", motorDestinations[i], i);
+        //             return false;
+        //         }
+        //     }
+        //
+        //     int dxl_comm_result = groupSyncWrite.txPacket();
+        //     if (dxl_comm_result != COMM_SUCCESS) {
+        //         spdlog::error("Failed to execute movement to {} motor position: {}", caliberationDestination[calCycle],  packetHandler->getTxRxResult(dxl_comm_result));
+        //         return false;
+        //     }
+        //     while(!this->readMotorPositions()) {
+        //         ;
+        //     }
+        // }
         groupSyncWrite.clearParam();
 
         spdlog::info("Motor controllers initialized successfully - torque enabled");
@@ -482,13 +482,13 @@ bool SystemController::performSafetyCheck(const DOUBLE_POSITION_ANGLES_RECORD& t
     if (getDAQChannelAverages(channelAverages)) {
         for (int i = 0; i < 3; i++) {
             if (channelAverages[i] > config.maxLoadVoltage) {
-                spdlog::warn("Safety: Load cell {} overload detected: {:.3f}V > {:.3f}V",
+                spdlog::warn("Safety: Load cell {} underload detected: {:.3f}V > {:.3f}V",
                            i, channelAverages[i], config.maxLoadVoltage);
                 return false;
             }
 
             if (channelAverages[i] < config.minLoadVoltage) {
-                spdlog::warn("Safety: Load cell {} may be disconnected: {:.3f}V < {:.3f}V",
+                spdlog::warn("Safety: Load cell {} overload detected: {:.3f}V < {:.3f}V",
                            i, channelAverages[i], config.minLoadVoltage);
                 return false;
             }
@@ -809,14 +809,14 @@ bool SystemController::moveMotorPositions() {
                 return false;
             }
         }
-        
+
         // Execute the group sync write
         int dxl_comm_result = groupSyncWrite.txPacket();
         if (dxl_comm_result != COMM_SUCCESS) {
             spdlog::error("Group sync write failed: {}", packetHandler->getTxRxResult(dxl_comm_result));
             return false;
         }
-        
+
         groupSyncWrite.clearParam();
         return true;
         
@@ -885,7 +885,7 @@ bool SystemController::adjustTensionBasedOnLoadCells() {
 
         // This logic is a bit confusing because larger negative values are larger loads.
         // Check if load is too high (overload)
-        // Too high means that it is lower than -1.4V
+        // Too high means that it is lower than our minimum voltage
         if (channelAverages[i] < config.minLoadVoltage) {
             // Relieve tension by moving motor to decrease cable tension
             adjustment = -config.tensionAdjustmentSteps;
@@ -893,7 +893,7 @@ bool SystemController::adjustTensionBasedOnLoadCells() {
                        i, channelAverages[i], config.maxLoadVoltage, -adjustment);
         }
         // Check if load is too low (potential sensor issue or slack cable)
-        // Too low means that it is higher than -0.5V
+        // Too low means that it is higher than our max voltage
         else if (channelAverages[i] > config.maxLoadVoltage) {
             // Increase tension by moving motor to tighten cable
             adjustment = config.tensionAdjustmentSteps;
