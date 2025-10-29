@@ -88,7 +88,7 @@ int main(int argc, char *argv[]) {
         config.enableSafetyChecks = true;
         config.maxLoadVoltage = -0.5;
         config.minLoadVoltage = -1.0;
-        config.tensionAdjustmentSteps = 10;
+        config.tensionAdjustmentSteps = 100;
         config.trackingDeadband = 300.0;
 
         // Create and initialize system controller

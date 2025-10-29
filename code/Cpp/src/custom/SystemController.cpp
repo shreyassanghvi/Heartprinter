@@ -216,7 +216,7 @@ bool SystemController::initializeDAQ() {
 // Initialize motors using direct Motor objects (self-contained)
 bool SystemController::initializeMotors() {
     spdlog::info("Initializing motor controllers...");
-    int caliberationDestination[] = {maxPos, minPos, neutralPos};
+    int caliberationDestination[] = {neutralPos};
     try {
         // Open port
         if (!portHandler->openPort()) {
@@ -274,6 +274,27 @@ bool SystemController::initializeMotors() {
         //         ;
         //     }
         // }
+        // groupSyncWrite.clearParam();
+
+        for (int calCycle = 0; calCycle< 1; calCycle++) {
+            groupSyncWrite.clearParam();
+            for (int i = 0; i < MOTOR_CNT; i++) {
+                motorDestinations[i] = caliberationDestination[calCycle];
+                if (!motors[i].setMotorDestination(&groupSyncWrite, motorDestinations[i])) {
+                    spdlog::error("Failed to set to {} position for motor {}", motorDestinations[i], i);
+                    return false;
+                }
+            }
+
+            int dxl_comm_result = groupSyncWrite.txPacket();
+            if (dxl_comm_result != COMM_SUCCESS) {
+                spdlog::error("Failed to execute movement to {} motor position: {}", caliberationDestination[calCycle],  packetHandler->getTxRxResult(dxl_comm_result));
+                return false;
+            }
+            while(!this->readMotorPositions()) {
+                ;
+            }
+        }
         groupSyncWrite.clearParam();
 
         spdlog::info("Motor controllers initialized successfully - torque enabled");
@@ -378,7 +399,7 @@ void SystemController::run() {
                     calculateMotorPositionsFromCommand(sharedCmd);
                 } else {
                     // Otherwise, let's set motorpositions based on the tracking function
-                    calculateMotorPositionsFromTracking();
+                    // calculateMotorPositionsFromTracking();
                 }
 
                 // Send new motor commands
@@ -882,6 +903,7 @@ bool SystemController::adjustTensionBasedOnLoadCells() {
 
     for (int i = 0; i < 3; i++) {
         int adjustment = 0;
+        int motor_i_current_pos = motors[i].checkAndGetPresentPosition(&groupSyncRead);
 
         // This logic is a bit confusing because larger negative values are larger loads.
         // Check if load is too high (overload)
@@ -903,16 +925,15 @@ bool SystemController::adjustTensionBasedOnLoadCells() {
 
         // Apply adjustment if needed
         if (adjustment != 0) {
-            // Motor 1 (Y-axis) has inverted logic - flip the adjustment direction
-            int finalAdjustment = (i == 1) ? -adjustment : adjustment;
+            int finalAdjustment = adjustment;
 
-            int newDestination = std::max(minPos, std::min(maxPos, motorDestinations[i] + finalAdjustment));
+            int newDestination = motor_i_current_pos + finalAdjustment;
 
             motorDestinations[i] = newDestination;
             adjustmentMade = true;
 
-            spdlog::info("Motor {} adjusted: new destination = {} (inverted: {})",
-                       i, newDestination, (i == 1 ? "yes" : "no"));
+            spdlog::info("Motor {} adjusted: current position = {}, new destination = {} (inverted: {})",
+                       i, motor_i_current_pos, newDestination, "no");
         }
     }
 
