@@ -134,8 +134,8 @@ bool SystemController::initializeDAQ() {
         AnalogConfig analogConf;
         analogConf.device = "Dev1";
         analogConf.channel = "ai0:2";
-        analogConf.minVoltage = 0.0;
-        analogConf.maxVoltage = 10.0;
+        analogConf.minVoltage = -10;
+        analogConf.maxVoltage = 10;
         analogConf.sampleRate = 1000.0;
         analogConf.samplesPerCallback = 1000;
 
@@ -149,8 +149,6 @@ bool SystemController::initializeDAQ() {
                        spdlog::warn("Invalid data or sample count in DataHandler!");
                        return;
                    }
-
-                   spdlog::info("DAQ - Total data points: {}", sizeof(data));
 
                    // Assuming that the data is interleaved [channel1, channel2, channel3, ... channel1, channel2, channel3]
                    const uInt32 numChannels = 3;  // ai0:2 = 3 channels
@@ -168,6 +166,7 @@ bool SystemController::initializeDAQ() {
                    if (g_systemControllerInstance) {
                        std::lock_guard<std::mutex> lock(g_systemControllerInstance->daqDataMutex);
                        for (uInt32 ch = 0; ch < numChannels; ch++) {
+                           spdlog::info("DAQ Channel {} Average Value {}", ch, channelAverages[ch]);
                            g_systemControllerInstance->daqChannelAverages[ch] = channelAverages[ch];
                        }
                        g_systemControllerInstance->daqDataAvailable = true;
@@ -200,8 +199,7 @@ bool SystemController::initializeDAQ() {
             return false;
         }
 
-        // TODO: maybe move into a separate function
-        spdlog::warn("TODO: Initializing load cell...");
+        spdlog::info("Initializing load cell.");
         if (DAQStart(daqSystem->analogHandle) != 0){
             return false;
         }
@@ -218,7 +216,7 @@ bool SystemController::initializeDAQ() {
 // Initialize motors using direct Motor objects (self-contained)
 bool SystemController::initializeMotors() {
     spdlog::info("Initializing motor controllers...");
-    int caliberationDestination[] = {maxPos, minPos, neutralPos};
+    int caliberationDestination[] = {neutralPos};
     try {
         // Open port
         if (!portHandler->openPort()) {
@@ -255,7 +253,30 @@ bool SystemController::initializeMotors() {
                 return false;
             }
         }
-        for (int calCycle = 0; calCycle< 3; calCycle++) {
+
+        // TODO: Remove this because its deprecated
+        // for (int calCycle = 0; calCycle< 3; calCycle++) {
+        //     groupSyncWrite.clearParam();
+        //     for (int i = 0; i < MOTOR_CNT; i++) {
+        //         motorDestinations[i] = caliberationDestination[calCycle];
+        //         if (!motors[i].setMotorDestination(&groupSyncWrite, motorDestinations[i])) {
+        //             spdlog::error("Failed to set to {} position for motor {}", motorDestinations[i], i);
+        //             return false;
+        //         }
+        //     }
+        //
+        //     int dxl_comm_result = groupSyncWrite.txPacket();
+        //     if (dxl_comm_result != COMM_SUCCESS) {
+        //         spdlog::error("Failed to execute movement to {} motor position: {}", caliberationDestination[calCycle],  packetHandler->getTxRxResult(dxl_comm_result));
+        //         return false;
+        //     }
+        //     while(!this->readMotorPositions()) {
+        //         ;
+        //     }
+        // }
+        // groupSyncWrite.clearParam();
+
+        for (int calCycle = 0; calCycle< 1; calCycle++) {
             groupSyncWrite.clearParam();
             for (int i = 0; i < MOTOR_CNT; i++) {
                 motorDestinations[i] = caliberationDestination[calCycle];
@@ -378,7 +399,7 @@ void SystemController::run() {
                     calculateMotorPositionsFromCommand(sharedCmd);
                 } else {
                     // Otherwise, let's set motorpositions based on the tracking function
-                    calculateMotorPositionsFromTracking();
+                    // calculateMotorPositionsFromTracking();
                 }
 
                 // Send new motor commands
@@ -422,8 +443,15 @@ States SystemController::processStateTransition(States current) {
             // Check for safety conditions
             if (!performSafetyCheck(currentPosition)) {
                 spdlog::warn("Safety check failed - tension outside of normal bounds.");
-                // TODO: Adjust the motor positions? We need to relieve or increase tension.
-                //  Should this be a different function? executeTensionAdjustment?
+
+                // Attempt to adjust motor positions to correct tension
+                if (!adjustTensionBasedOnLoadCells()) {
+                    spdlog::error("Failed to adjust tension - entering error state");
+                    return States::ERR;
+                }
+
+                // After adjustment, transition to MOVING state to let motors reach new positions
+                return States::MOVING;
             }
 
             // Check if motors are moving
@@ -473,20 +501,16 @@ bool SystemController::performSafetyCheck(const DOUBLE_POSITION_ANGLES_RECORD& t
     // Check DAQ channel averages (load cells)
     double channelAverages[3];
     if (getDAQChannelAverages(channelAverages)) {
-        // TODO: Adjust/configure this appropriately.
-        const double MAX_LOAD_VOLTAGE = 100.0;
-        const double MIN_LOAD_VOLTAGE = 0.0;
-
         for (int i = 0; i < 3; i++) {
-            if (channelAverages[i] > MAX_LOAD_VOLTAGE) {
-                spdlog::warn("Safety: Load cell {} overload detected: {:.3f}V > {:.3f}V",
-                           i, channelAverages[i], MAX_LOAD_VOLTAGE);
+            if (channelAverages[i] > config.maxLoadVoltage) {
+                spdlog::warn("Safety: Load cell {} underload detected: {:.3f}V > {:.3f}V",
+                           i, channelAverages[i], config.maxLoadVoltage);
                 return false;
             }
 
-            if (channelAverages[i] < MIN_LOAD_VOLTAGE) {
-                spdlog::warn("Safety: Load cell {} may be disconnected: {:.3f}V < {:.3f}V",
-                           i, channelAverages[i], MIN_LOAD_VOLTAGE);
+            if (channelAverages[i] < config.minLoadVoltage) {
+                spdlog::warn("Safety: Load cell {} overload detected: {:.3f}V < {:.3f}V",
+                           i, channelAverages[i], config.minLoadVoltage);
                 return false;
             }
         }
@@ -725,10 +749,9 @@ bool SystemController::readSharedMemoryCommand(MotorCommand& cmd) {
 
 // Calculate motor positions from shared memory command
 void SystemController::calculateMotorPositionsFromCommand(const MotorCommand& cmd) {
-    static const double DEADBAND = 300.0;
-    if ((std::abs(cmd.target_x) > DEADBAND) ||
-        (std::abs(cmd.target_y) > DEADBAND) ||
-        (std::abs(cmd.target_z) > DEADBAND)) {
+    if ((std::abs(cmd.target_x) > config.trackingDeadband) ||
+        (std::abs(cmd.target_y) > config.trackingDeadband) ||
+        (std::abs(cmd.target_z) > config.trackingDeadband)) {
         spdlog::warn("SHM: Target cannot be reached, outside of DEADBAND.");
     }
 
@@ -746,17 +769,15 @@ void SystemController::calculateMotorPositionsFromCommand(const MotorCommand& cm
 
 // Calculate motor positions from tracking data
 void SystemController::calculateMotorPositionsFromTracking() {
-    static const double DEADBAND = 300.0;
-
     double dx = currentPosition.x;
     double dy = currentPosition.y;
     double dz = currentPosition.z;
 
     // X axis (motor 0): normal logic
-    if (dx > DEADBAND) {
+    if (dx > config.trackingDeadband) {
         motorDestinations[0] = maxPos;
         setLEDState(static_cast<int>(LED::LEFT_BASE), true);
-    } else if (dx < -DEADBAND) {
+    } else if (dx < -config.trackingDeadband) {
         motorDestinations[0] = minPos;
         setLEDState(static_cast<int>(LED::LEFT_BASE), true);
     } else {
@@ -765,10 +786,10 @@ void SystemController::calculateMotorPositionsFromTracking() {
     }
 
     // Y axis (motor 1): inverted logic
-    if (dy > DEADBAND) {
+    if (dy > config.trackingDeadband) {
         motorDestinations[1] = minPos;  // inverted
         setLEDState(static_cast<int>(LED::CENTER_BASE), true);
-    } else if (dy < -DEADBAND) {
+    } else if (dy < -config.trackingDeadband) {
         motorDestinations[1] = maxPos;  // inverted
         setLEDState(static_cast<int>(LED::CENTER_BASE), true);
     } else {
@@ -777,10 +798,10 @@ void SystemController::calculateMotorPositionsFromTracking() {
     }
 
     // Z axis (motor 2): normal logic
-    if (dz > DEADBAND) {
+    if (dz > config.trackingDeadband) {
         motorDestinations[2] = maxPos;
         setLEDState(static_cast<int>(LED::RIGHT_BASE), true);
-    } else if (dz < -DEADBAND) {
+    } else if (dz < -config.trackingDeadband) {
         motorDestinations[2] = minPos;
         setLEDState(static_cast<int>(LED::RIGHT_BASE), true);
     } else {
@@ -809,14 +830,14 @@ bool SystemController::moveMotorPositions() {
                 return false;
             }
         }
-        
+
         // Execute the group sync write
         int dxl_comm_result = groupSyncWrite.txPacket();
         if (dxl_comm_result != COMM_SUCCESS) {
             spdlog::error("Group sync write failed: {}", packetHandler->getTxRxResult(dxl_comm_result));
             return false;
         }
-        
+
         groupSyncWrite.clearParam();
         return true;
         
@@ -868,4 +889,64 @@ bool SystemController::readMotorPositions() {
         spdlog::error("Exception during motor position reading: {}", e.what());
         return false;
     }
+}
+
+// Adjust motor positions based on load cell readings to maintain safe tension
+bool SystemController::adjustTensionBasedOnLoadCells() {
+    double channelAverages[3];
+    if (!getDAQChannelAverages(channelAverages)) {
+        spdlog::warn("Cannot adjust tension - DAQ data not available");
+        return false;
+    }
+
+    bool adjustmentMade = false;
+
+    for (int i = 0; i < 3; i++) {
+        int adjustment = 0;
+        int motor_i_current_pos = motors[i].checkAndGetPresentPosition(&groupSyncRead);
+
+        // This logic is a bit confusing because larger negative values are larger loads.
+        // Check if load is too high (overload)
+        // Too high means that it is lower than our minimum voltage
+        if (channelAverages[i] < config.minLoadVoltage) {
+            // Relieve tension by moving motor to decrease cable tension
+            adjustment = -config.tensionAdjustmentSteps;
+            spdlog::info("Motor {} overload ({:.3f}V > {:.3f}V) - relieving tension by {} steps",
+                       i, channelAverages[i], config.maxLoadVoltage, -adjustment);
+        }
+        // Check if load is too low (potential sensor issue or slack cable)
+        // Too low means that it is higher than our max voltage
+        else if (channelAverages[i] > config.maxLoadVoltage) {
+            // Increase tension by moving motor to tighten cable
+            adjustment = config.tensionAdjustmentSteps;
+            spdlog::info("Motor {} underload ({:.3f}V < {:.3f}V) - increasing tension by {} steps",
+                       i, channelAverages[i], config.minLoadVoltage, adjustment);
+        }
+
+        // Apply adjustment if needed
+        if (adjustment != 0) {
+            int finalAdjustment = adjustment;
+
+            int newDestination = motor_i_current_pos + finalAdjustment;
+
+            motorDestinations[i] = newDestination;
+            adjustmentMade = true;
+
+            spdlog::info("Motor {} adjusted: current position = {}, new destination = {} (inverted: {})",
+                       i, motor_i_current_pos, newDestination, "no");
+        }
+    }
+
+    // If adjustments were made, send the new motor commands
+    if (adjustmentMade) {
+        if (!moveMotorPositions()) {
+            spdlog::error("Failed to apply tension adjustments");
+            return false;
+        }
+        spdlog::info("Tension adjustment applied successfully");
+    } else {
+        spdlog::debug("No tension adjustment needed - all loads within acceptable range");
+    }
+
+    return true;
 }

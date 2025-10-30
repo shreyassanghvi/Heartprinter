@@ -61,10 +61,21 @@ struct StatusUpdate;
 
 // System configuration
 struct SystemConfig {
+    // Motor configuration
     std::string deviceName = "/dev/ttyUSB0";
     int baudRate = 57600;
     int recordCount = 1000;
+
+    // Safety configuration
     bool enableSafetyChecks = true;
+    double maxLoadVoltage = -0.5;      // Maximum safe load cell voltage
+    double minLoadVoltage = -1.0;        // Minimum expected load cell voltage
+
+    // Tension adjustment configuration
+    int tensionAdjustmentSteps = 2;     // Number of motor steps to adjust tension (1-2 recommended)
+
+    // Tracking configuration
+    double trackingDeadband = 300.0;    // Deadband for tracking position (mm)
 };
 
 // System status
@@ -142,6 +153,7 @@ private:
     void calculateMotorPositionsFromTracking();
     bool moveMotorPositions();
     bool readMotorPositions();
+    bool adjustTensionBasedOnLoadCells();
     
 public:
     // Constructor/Destructor - RAII
