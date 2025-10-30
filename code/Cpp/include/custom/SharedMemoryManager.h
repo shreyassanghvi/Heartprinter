@@ -7,6 +7,7 @@
 
 #include <string>
 #include <functional>
+#include "../Trackstar/ATC3DG.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -23,6 +24,15 @@ struct MotorCommand {
 };
 
 struct StatusUpdate {
+    double base1_x;
+    double base1_y;
+    double base1_z;
+    double base2_x;
+    double base2_y;
+    double base2_z;
+    double base3_x;
+    double base3_y;
+    double base3_z;
     double current_x;
     double current_y;
     double current_z;
@@ -52,7 +62,9 @@ public:
     bool writeMotorCommand(const MotorCommand& command);
     
     // Status writing
-    bool writeStatusUpdate(double x, double y, double z, const std::string& status);
+    bool writeStatusUpdate(const DOUBLE_POSITION_ANGLES_RECORD& currentPos,
+                          const DOUBLE_POSITION_ANGLES_RECORD basePositions[3],
+                          const std::string& status);
     
     // Status
     bool isInitialized() const { return initialized; }

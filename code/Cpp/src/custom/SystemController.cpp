@@ -77,17 +77,17 @@ bool SystemController::initialize() {
             spdlog::warn("Failed to initialize shared memory - continuing without it");
         }
 
-        sharedMemory->writeStatusUpdate(currentPosition.x, currentPosition.y, currentPosition.z, currentStateToString());
+        sharedMemory->writeStatusUpdate(currentPosition, staticBasePositions, currentStateToString());
 
         if (!initializeHardware()) {
-            handleError(SystemException(SystemError::MOTOR_INIT_FAILED, 
+            handleError(SystemException(SystemError::MOTOR_INIT_FAILED,
                                       "Failed to initialize hardware"));
             return false;
         }
         currentState = States::CALIBRATION;
         initialized = true;
 
-        sharedMemory->writeStatusUpdate(currentPosition.x, currentPosition.y, currentPosition.z, currentStateToString());
+        sharedMemory->writeStatusUpdate(currentPosition, staticBasePositions, currentStateToString());
         spdlog::info("System initialization complete - Ready for operation");
         return true;
     } catch (const SystemException& e) {
@@ -360,7 +360,7 @@ void SystemController::run() {
                 currentState = newState;
                 spdlog::info("{} -> {}", state_str, currentStateToString());
             }
-            sharedMemory->writeStatusUpdate(currentPosition.x, currentPosition.y, currentPosition.z, currentStateToString());
+            sharedMemory->writeStatusUpdate(currentPosition, staticBasePositions, currentStateToString());
 
             // Break if we're no longer in a valid running state
             if (currentState != States::RUNNING && currentState != States::MOVING) {
@@ -645,7 +645,7 @@ void SystemController::shutdown() {
     spdlog::info("Shutting down system...");
     currentState = States::CLEANUP;
 
-    sharedMemory->writeStatusUpdate(currentPosition.x, currentPosition.y, currentPosition.z, currentStateToString());
+    sharedMemory->writeStatusUpdate(currentPosition, staticBasePositions, currentStateToString());
     try {
         // Stop all operations
         stopAnalogAcquisition();
@@ -757,7 +757,7 @@ bool SystemController::readSharedMemoryCommand(MotorCommand& cmd) {
     }
 
     // Update status in shared memory
-    sharedMemory->writeStatusUpdate(currentPosition.x, currentPosition.y, currentPosition.z, currentStateToString());
+    sharedMemory->writeStatusUpdate(currentPosition, staticBasePositions, currentStateToString());
 
     // Try to read shared memory command
     if (!sharedMemory->readMotorCommand(cmd)) {
