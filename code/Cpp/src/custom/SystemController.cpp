@@ -84,7 +84,7 @@ bool SystemController::initialize() {
                                       "Failed to initialize hardware"));
             return false;
         }
-        currentState = States::READY;
+        currentState = States::CALIBRATION;
         initialized = true;
 
         sharedMemory->writeStatusUpdate(currentPosition.x, currentPosition.y, currentPosition.z, currentStateToString());
@@ -333,6 +333,9 @@ bool SystemController::initializeTracker() {
 
 // Main control loop
 void SystemController::run() {
+    // Go through calibration
+    currentState = processStateTransition(currentState);
+
     if (currentState != States::READY) {
         spdlog::error("System not ready - current state: {}", 
                      static_cast<int>(currentState));
@@ -434,6 +437,32 @@ States SystemController::processStateTransition(States current) {
             return States::INITIALIZING;
 
         case States::INITIALIZING:
+            return States::CALIBRATION;
+
+        case States::CALIBRATION:
+            // Check if all 4 probes are returning values
+            if (!validateProbes())
+            {
+                spdlog::error("Missing probe detected, going into calibration routine");
+
+                // If calibration is not yet complete, perform it
+                spdlog::info("Starting calibration routine...");
+                if (!performCalibration())
+                {
+                    spdlog::error("Calibration routine failed");
+                    return States::ERR;
+                }
+            }
+
+            // Calculate centroid of the three base positions
+            calculateCentroid();
+
+            // Move to centroid position
+            spdlog::info("Moving to centroid position...");
+            if (!moveToTarget(centroidPosition)) {
+                spdlog::error("Failed to move to centroid position");
+                return States::ERR;
+            }
             return States::READY;
 
         case States::READY:
@@ -710,6 +739,7 @@ std::string SystemController::currentStateToString() const {
     switch (currentState) {
         case States::START: return "START";
         case States::INITIALIZING: return "INIT";
+        case States::CALIBRATION: return "CALIB";
         case States::READY: return "READY";
         case States::RUNNING: return "RUN";
         case States::MOVING: return "MOVE";
@@ -947,6 +977,217 @@ bool SystemController::adjustTensionBasedOnLoadCells() {
     } else {
         spdlog::debug("No tension adjustment needed - all loads within acceptable range");
     }
+
+    return true;
+}
+
+// Calibration Functions
+
+// Validate that all 4 probes are returning valid data
+// Also stores the static base positions (sensors 0-2) into staticBasePositions array
+bool SystemController::validateProbes() {
+    spdlog::info("Validating tracking probes...");
+
+    int sensorCount = getConnectedSensors();
+    spdlog::info("Found {} connected sensors", sensorCount);
+
+    if (sensorCount < 4) {
+        spdlog::error("Insufficient sensors detected. Expected 4 sensors (1 moving + 3 static bases), found {}", sensorCount);
+        return false;
+    }
+
+    // Try to read from all 4 sensors
+    for (short sensorID = 0; sensorID < 4; sensorID++) {
+        DOUBLE_POSITION_ANGLES_RECORD record;
+        record.x = -100;
+        record.y = -100;
+        record.z = -100;
+
+        int errorCode = GetAsynchronousRecord(sensorID, &record, sizeof(record));
+        if (errorCode != BIRD_ERROR_SUCCESS) {
+            spdlog::error("Failed to read from sensor {}", sensorID);
+            return false;
+        }
+
+        unsigned int status = GetSensorStatus(sensorID);
+        if (status != VALID_STATUS) {
+            spdlog::error("Sensor {} status invalid: 0x{:X}", sensorID, status);
+            return false;
+        }
+
+        spdlog::info("Sensor {} validated: ({:.2f}, {:.2f}, {:.2f})",
+                    sensorID, record.x, record.y, record.z);
+
+        // Store static base positions (sensors 0, 1, 2)
+        if (sensorID < 3) {
+            staticBasePositions[sensorID] = record;
+            spdlog::info("Static base {} position stored: ({:.2f}, {:.2f}, {:.2f})",
+                        sensorID, record.x, record.y, record.z);
+        }
+    }
+
+    spdlog::info("All 4 probes validated successfully");
+    spdlog::info("Static base positions recorded from sensors 0-2");
+    return true;
+}
+
+// Detect if motors have reached the base by checking position stability
+// Returns true if the motor has stalled (not moving AND not at commanded position)
+bool SystemController::detectBaseArrival(int motorIndex) {
+    if (motorIndex < 0 || motorIndex >= MOTOR_CNT) {
+        spdlog::error("Invalid motor index for base arrival detection: {}", motorIndex);
+        return false;
+    }
+
+    int previousPosition = -1;
+    int stableReadCount = 0;
+
+    spdlog::debug("Waiting for motor {} to stall at base...", motorIndex);
+
+    while (stableReadCount < config.calibrationStabilityReads) {
+        // Read current motor position
+        int currentPos = motors[motorIndex].checkAndGetPresentPosition(&groupSyncRead);
+
+        // Check if we've reached the commanded position
+        if (motors[motorIndex].checkIfAtGoalPosition(motorDestinations[motorIndex])) {
+            spdlog::debug("Motor {} reached commanded position {} - not stalled",
+                         motorIndex, motorDestinations[motorIndex]);
+            return false;  // Motor reached target, not blocked by base
+        }
+
+        // Check if position has changed significantly from previous read
+        if (previousPosition != -1) {
+            int posDiff = std::abs(currentPos - previousPosition);
+            if (posDiff > config.calibrationPositionTolerance) {
+                // Motor is still moving, reset stable count
+                stableReadCount = 0;
+                spdlog::debug("Motor {} still moving: pos={}, diff={}", motorIndex, currentPos, posDiff);
+            } else {
+                // Motor position hasn't changed - increment stable count
+                stableReadCount++;
+                spdlog::debug("Motor {} stable read {}/{}: pos={}",
+                             motorIndex, stableReadCount, config.calibrationStabilityReads, currentPos);
+            }
+        }
+
+        previousPosition = currentPos;
+
+        // Small delay between reads
+        Sleep(100);
+    }
+
+    spdlog::info("Motor {} stalled at base (stable for {} reads at position {})",
+                motorIndex, config.calibrationStabilityReads, previousPosition);
+    return true;
+}
+
+// Move to a specific static base by retracting one motor and extending the others
+bool SystemController::moveToBase(int baseIndex) {
+    if (baseIndex < 0 || baseIndex >= 3) {
+        spdlog::error("Invalid base index: {}. Must be 0-2", baseIndex);
+        return false;
+    }
+
+    spdlog::info("Moving to static base {}...", baseIndex);
+
+    bool baseReached = false;
+    while (!baseReached) {
+        // Set motor destinations
+        // Retract the motor associated with this base by N steps, extend the other two motors by N steps
+        groupSyncWrite.clearParam();
+        for (int i = 0; i < MOTOR_CNT; i++) {
+            if (i == baseIndex) {
+                // Retract this motor (increase position by calibrationMovementSteps)
+                int newPosition = motorDestinations[i] + config.calibrationMovementSteps;
+                motorDestinations[i] = std::min(newPosition, maxPos);  // Clamp to max
+            } else {
+                // Extend other motors (decrease position by calibrationMovementSteps)
+                int newPosition = motorDestinations[i] - config.calibrationMovementSteps;
+                motorDestinations[i] = std::max(newPosition, minPos);  // Clamp to min
+            }
+
+            if (!motors[i].setMotorDestination(&groupSyncWrite, motorDestinations[i])) {
+                spdlog::error("Failed to set destination for motor {} when moving to base {}", i, baseIndex);
+                return false;
+            }
+
+            spdlog::info("Motor {} destination set to {} (base {} calibration)", i, motorDestinations[i], baseIndex);
+        }
+
+        // Execute movement
+        int dxl_comm_result = groupSyncWrite.txPacket();
+        if (dxl_comm_result != COMM_SUCCESS) {
+            spdlog::error("Failed to execute movement to base {}: {}",
+                         baseIndex, packetHandler->getTxRxResult(dxl_comm_result));
+            return false;
+        }
+
+        // Wait for arrival at base by checking if the retracting motor has stalled
+        if (detectBaseArrival(baseIndex)) {
+            spdlog::info("Base {} reached - motor {} stalled", baseIndex, baseIndex);
+            baseReached = true;
+        } else {
+            spdlog::debug("Motor {} not yet stalled, continuing movement to base {}", baseIndex, baseIndex);
+        }
+    }
+
+    // Read and store the tracking position at this base
+    try {
+        staticBasePositions[baseIndex] = readATI(3); // Read from moving base sensor
+        spdlog::info("Base {} position recorded: ({:.2f}, {:.2f}, {:.2f})",
+                    baseIndex,
+                    staticBasePositions[baseIndex].x,
+                    staticBasePositions[baseIndex].y,
+                    staticBasePositions[baseIndex].z);
+    } catch (const std::exception& e) {
+        spdlog::error("Failed to read tracking position at base {}: {}", baseIndex, e.what());
+        return false;
+    }
+
+    return true;
+}
+
+// Calculate the centroid of the three static base positions
+void SystemController::calculateCentroid() {
+    spdlog::info("Calculating centroid of static base positions...");
+
+    centroidPosition.x = (staticBasePositions[0].x + staticBasePositions[1].x + staticBasePositions[2].x) / 3.0;
+    centroidPosition.y = (staticBasePositions[0].y + staticBasePositions[1].y + staticBasePositions[2].y) / 3.0;
+    centroidPosition.z = (staticBasePositions[0].z + staticBasePositions[1].z + staticBasePositions[2].z) / 3.0;
+
+    spdlog::info("Centroid position: ({:.2f}, {:.2f}, {:.2f})",
+                centroidPosition.x, centroidPosition.y, centroidPosition.z);
+}
+
+// Perform full calibration routine
+bool SystemController::performCalibration() {
+    spdlog::info("Starting Calibration Routine");
+
+    // Record initial position (first base position is starting position)
+    try {
+        staticBasePositions[1] = readATI(3);
+        spdlog::info("Initial position (base 0) recorded: ({:.2f}, {:.2f}, {:.2f})",
+                    staticBasePositions[0].x,
+                    staticBasePositions[0].y,
+                    staticBasePositions[0].z);
+    } catch (const std::exception& e) {
+        spdlog::error("Failed to read initial position: {}", e.what());
+        return false;
+    }
+
+    // Move to the other two static bases and record their positions
+    for (int baseIndex = 0; baseIndex < 3; baseIndex++) {
+        if (baseIndex == 1) {
+            continue;
+        }
+
+        if (!moveToBase(baseIndex)) {
+            spdlog::error("Failed to move to base {}", baseIndex);
+            return false;
+        }
+    }
+
+    spdlog::info("Calibration Complete");
 
     return true;
 }
