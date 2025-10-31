@@ -5,7 +5,7 @@ from PyQt5.QtWidgets import (
     QApplication, QWidget, QHBoxLayout, QVBoxLayout, QGridLayout, QLabel,
     QGroupBox, QPushButton, QLineEdit, QMessageBox,
 )
-from PyQt5.QtGui import QPalette, QColor, QFont
+from PyQt5.QtGui import QPalette, QColor, QFont, QVector3D
 from PyQt5.QtCore import Qt, QTimer
 import pyqtgraph.opengl as gl
 from pyqtgraph.opengl import MeshData, GLMeshItem
@@ -28,12 +28,21 @@ MOTOR_STRUCT_SIZE = struct.calcsize(MOTOR_STRUCT_FORMAT)
 
 @dataclass
 class HeartprinterStatus:
-    current_x: float
-    current_y: float
-    current_z: float
+    current_baseL_x: float
+    current_baseL_y: float
+    current_baseL_z: float
+    current_baseC_x: float
+    current_baseC_y: float
+    current_baseC_z: float
+    current_baseR_x: float
+    current_baseR_y: float
+    current_baseR_z: float
+    current_baseMP_x: float
+    current_baseMP_y: float
+    current_baseMP_z: float
     status: str
 
-STATUS_STRUCT_FORMAT = 'ddd6s2x'
+STATUS_STRUCT_FORMAT = 'dddddddddddd6s2x'
 STATUS_STRUCT_SIZE = struct.calcsize(STATUS_STRUCT_FORMAT)
 
 def read_all_points(filename):
@@ -296,21 +305,20 @@ class MainWindow(QWidget):
         self.end_button = QPushButton("End")
         self.end_button.clicked.connect(self.end_system)
         right_panel.addWidget(self.end_button)
+        self.recenter_button = QPushButton("Recenter View")
+        self.recenter_button.clicked.connect(self.recenter_view)
+        right_panel.addWidget(self.recenter_button)
 
         # === INITIALIZE APPLICATION DATA ===
         self.setLayout(main_layout)
 
         # Load points
-        self.current_pos = None
-        self.points = None
-        self.target_pos = None
+        self.points = np.zeros((3, 3))      # Three reference points at origin
+        self.fourth_point = np.zeros(3)     # Fourth point at origin
+        self.current_pos = self.fourth_point.copy()
+        self.target_pos = np.mean(self.points, axis=0)
 
-        pts = read_all_points('input.txt')
-        if pts is None or len(pts) < 4:
-            show_error_and_exit(self, "Input file must contain at least 4 valid points.")
-        else:
-            self.points = pts[:3]
-            self.fourth_point = pts[3]
+
         labels = ["Left", "Center", "Right"]
         for i, p in enumerate(self.points):
             lbl_name = QLabel(labels[i])
@@ -384,6 +392,25 @@ class MainWindow(QWidget):
         self.redraw_timer.timeout.connect(self.redraw_if_needed)
         self.redraw_timer.start(33)  # ~30 FPS
 
+
+    def recenter_view(self):
+        if self.points is not None:
+            center_pos = np.mean(self.points, axis=0)
+        else:
+            center_pos = np.array([0, 0, 0])
+
+        # Set the center of view (the point camera looks at)
+        self.view.opts['center'] = QVector3D(center_pos[0], center_pos[1], center_pos[2])
+
+
+        # Adjust camera distance, azimuth, and elevation as desired (no 'center' kwarg!)
+        self.view.setCameraPosition(
+            distance=50,    # adjust as needed
+            azimuth=270,    # rotation around vertical axis
+            elevation=20    # vertical tilt angle
+        )
+
+
     def try_connect_shared_memory(self, first=False):
         try:
             self.read_shm = shared_memory.SharedMemory(name="Local\\CPPToPy", size=STATUS_STRUCT_SIZE)
@@ -400,6 +427,7 @@ class MainWindow(QWidget):
             self.retry_button.show()
             if not first:
                 QMessageBox.warning(self, "Shared Memory", "Shared memory segment not found. Please ensure C++ process is running and retry.")
+        print(self.read_shm)
 
     def redraw_if_needed(self):
         if self._data_changed:
@@ -421,11 +449,34 @@ class MainWindow(QWidget):
         try:
             if self.read_shm:
                 status_data = bytes(self.read_shm.buf[:STATUS_STRUCT_SIZE])
-                current_x, current_y, current_z, status = struct.unpack(STATUS_STRUCT_FORMAT, status_data)
-                print(f"Current X, Y, and Z: ({current_x}, {current_y}, {current_z})")
-                term_pos = status.find(b'\x00')
-                status = status.decode('utf-8') if term_pos == -1 else status[:term_pos].decode('utf-8')
+                unpacked = struct.unpack(STATUS_STRUCT_FORMAT, status_data)
+                points = np.array([
+                    [unpacked[0], unpacked[1], unpacked[2]],   # Left
+                    [unpacked[3], unpacked[4], unpacked[5]],   # Center
+                    [unpacked[6], unpacked[7], unpacked[8]],   # Right
+                    [unpacked[9], unpacked[10], unpacked[11]]  # MP (moving point)
+                ])
+                status_bytes = unpacked[12]
+                term_pos = status_bytes.find(b'\x00')
+                status_str = status_bytes if term_pos == -1 else status_bytes[:term_pos]
+                status = status_str.decode('utf-8')
 
+
+                print(f"Left X, Y, and Z: ({points[0]})")
+                print(f"Center X, Y, and Z: ({points[1]})")
+                print(f"Right X, Y, and Z: ({points[2]})")
+                print(f"MP X, Y, and Z: ({points[3]})")
+                self.points = points[:3]
+                self.current_pos = points[3]
+                self.scatter_green.setData(pos=self.points)  # Green points for Left, Center, Right
+                self.scatter_red.setData(pos=np.array([self.current_pos]))
+                coord_grid_layout = self.right_layout.itemAt(0).widget().layout()
+                labels = ["Left", "Center", "Right"]
+                for i, p in enumerate(self.points):
+                    lbl_coord = coord_grid_layout.itemAtPosition(i, 2).widget()
+                    lbl_coord.setText(f"({p[0]:.3f}, {p[1]:.3f}, {p[2]:.3f})")
+                self.view.update()
+                print(f"Status: {status}")
                 if status == "exit":
                     self.read_shm.close()
                     self.read_shm = None
