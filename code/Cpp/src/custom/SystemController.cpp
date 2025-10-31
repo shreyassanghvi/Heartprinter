@@ -369,7 +369,11 @@ void SystemController::run() {
             
             // Read tracking data
             try {
-                currentPosition = readATI(0); // Read from first sensor directly
+                // TODO: We need to refactor this, right now readATI returns the last connected sensor
+                //  It doesn't actually respect the sensor ID that you pass through.
+                //  validateProbe does actually set the staticBasePositions for bases with connected sensors.
+                validateProbes();
+                currentPosition = readATI(3); // Read from first sensor directly
 
                 dataCount++;
 
@@ -991,9 +995,11 @@ bool SystemController::validateProbes() {
     int sensorCount = getConnectedSensors();
     spdlog::info("Found {} connected sensors", sensorCount);
 
+    bool all_connected = true;
+
     if (sensorCount < 4) {
         spdlog::error("Insufficient sensors detected. Expected 4 sensors (1 moving + 3 static bases), found {}", sensorCount);
-        return false;
+        all_connected = false;
     }
 
     // Try to read from all 4 sensors
@@ -1006,13 +1012,15 @@ bool SystemController::validateProbes() {
         int errorCode = GetAsynchronousRecord(sensorID, &record, sizeof(record));
         if (errorCode != BIRD_ERROR_SUCCESS) {
             spdlog::error("Failed to read from sensor {}", sensorID);
-            return false;
+            all_connected = false;
+            continue;
         }
 
         unsigned int status = GetSensorStatus(sensorID);
         if (status != VALID_STATUS) {
             spdlog::error("Sensor {} status invalid: 0x{:X}", sensorID, status);
-            return false;
+            all_connected = false;
+            continue;
         }
 
         spdlog::info("Sensor {} validated: ({:.2f}, {:.2f}, {:.2f})",
@@ -1026,9 +1034,9 @@ bool SystemController::validateProbes() {
         }
     }
 
-    spdlog::info("All 4 probes validated successfully");
-    spdlog::info("Static base positions recorded from sensors 0-2");
-    return true;
+    spdlog::info("All 4 probes connected?: {}", all_connected);
+    spdlog::info("Static base positions recorded for connected sensors.");
+    return all_connected;
 }
 
 // Detect if motors have reached the base by checking position stability
