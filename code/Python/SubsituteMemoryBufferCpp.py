@@ -72,8 +72,8 @@ class SharedMemoryWriter(QWidget):
 
         # Cable length displays
         self.labels_motor_calc = {}
-        motor_fields = ['Left cable length(mm)', 'Center cable Length (mm)', 'Right cable Length (mm)',
-                       'Left motor Steps', 'Center motor Steps', 'Right motor Steps']
+        motor_fields = ['Cable 0 Length (mm)', 'Cable 1 Length (mm)', 'Cable 2 Length (mm)',
+                       'Motor 0 Steps', 'Motor 1 Steps', 'Motor 2 Steps']
         for i, field in enumerate(motor_fields):
             motor_calc_layout.addWidget(QLabel(field + ":"), i, 0)
             lbl = QLabel("--")
