@@ -160,6 +160,8 @@ class SharedMemoryWriter(QWidget):
 
     def calculate_motor_positions(self, target_x, target_y, target_z):
         try:
+            # TODO: This is calculating the motor positions using the global position. This is wrong. It needs to calculate the motor positions using the
+            #   Local coordinates of the moving point. Otherwise, we're going to be letting out way too much wire.
             # Get base positions from inputs
             static_base_positions = [
                 np.array([float(self.inputs[0].text()), float(self.inputs[1].text()), float(self.inputs[2].text())]),   # Base 0 (Left)
