@@ -559,6 +559,37 @@ class MainWindow(QWidget):
         event.accept()
 
 
+    def line_edit_changed(self, axis, widget):
+        """
+        Handle changes to coordinate input fields.
+
+        Called when user finishes editing a coordinate input field (X, Y, or Z).
+        Validates the input, updates the target position, and refreshes the visualization.
+        Shows error dialog for invalid input and reverts to previous value.
+
+        Args:
+            axis (str): Which axis was changed ('X', 'Y', or 'Z')
+            widget (QLineEdit): The input field widget that was modified
+
+        Side effects:
+            - Updates target_pos coordinate for specified axis
+            - Moves blue target point in 3D view
+            - Updates display labels
+            - Shows error dialog for invalid input
+            - Reverts input field on error
+        """
+        try:
+            val = float(widget.text())
+        except ValueError:
+            QMessageBox.warning(self, "Invalid Input", f"Please enter a valid number for {axis}")
+            self.update_inputs_from_target()
+            return
+        idx = {'X': 0, 'Y': 1, 'Z': 2}[axis]
+        self.target_pos[idx] = val
+        self._data_changed = True
+        self.update_labels()
+
+
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     w = MainWindow()
