@@ -64,6 +64,22 @@ class SharedMemoryWriter(QWidget):
             readback_layout.addWidget(lbl, i, 1)
             self.labels_readback[field] = lbl
 
+        # Group box for motor position calculation
+        motor_calc_group = QGroupBox("Motor Position Calculation")
+        motor_calc_layout = QGridLayout()
+        motor_calc_group.setLayout(motor_calc_layout)
+        self.layout.addWidget(motor_calc_group)
+
+        # Cable length displays
+        self.labels_motor_calc = {}
+        motor_fields = ['Left cable length(mm)', 'Center cable Length (mm)', 'Right cable Length (mm)',
+                       'Left motor Steps', 'Center motor Steps', 'Right motor Steps']
+        for i, field in enumerate(motor_fields):
+            motor_calc_layout.addWidget(QLabel(field + ":"), i, 0)
+            lbl = QLabel("--")
+            motor_calc_layout.addWidget(lbl, i, 1)
+            self.labels_motor_calc[field] = lbl
+
         # Retry button for read shared memory
         self.retry_button = QPushButton("Retry PyToCPP Shared Memory")
         self.retry_button.hide()
@@ -142,6 +158,54 @@ class SharedMemoryWriter(QWidget):
         except Exception as e:
             print(f"Error writing shared memory: {e}")
 
+    def calculate_motor_positions(self, target_x, target_y, target_z):
+        try:
+            # Get base positions from inputs
+            static_base_positions = [
+                np.array([float(self.inputs[0].text()), float(self.inputs[1].text()), float(self.inputs[2].text())]),   # Base 0 (Left)
+                np.array([float(self.inputs[3].text()), float(self.inputs[4].text()), float(self.inputs[5].text())]),   # Base 1 (Center)
+                np.array([float(self.inputs[6].text()), float(self.inputs[7].text()), float(self.inputs[8].text())])    # Base 2 (Right)
+            ]
+
+            # Target position (from MotorCommand in C++)
+            target_pos = np.array([target_x, target_y, target_z])
+
+            PULLEY_DIAMETER_MM = 30.0
+
+            # mmToDynamixelUnits()
+            steps_per_mm = 4096.0 / (np.pi * PULLEY_DIAMETER_MM)
+
+            # Calculate for each motor
+            cable_lengths = []
+            motor_destinations = []
+
+            for i in range(3):
+                # Vector from base to target
+                dx = target_pos[0] - static_base_positions[i][0]
+                dy = target_pos[1] - static_base_positions[i][1]
+                dz = target_pos[2] - static_base_positions[i][2]
+
+                # Distance from target to base
+                cable_length = np.sqrt(dx**2 + dy**2 + dz**2)
+                cable_lengths.append(cable_length)
+
+                # Convert to steps
+                motor_dest = int(cable_length * steps_per_mm)
+                motor_destinations.append(motor_dest)
+
+                # Update display
+                self.labels_motor_calc[f'Cable {i} Length (mm)'].setText(f"{cable_length:.3f}")
+                self.labels_motor_calc[f'Motor {i} Steps'].setText(f"{motor_dest}")
+
+            return cable_lengths, motor_destinations
+
+        except ValueError as e:
+            print(f"Error calculating motor positions: Invalid input values - {e}")
+            return None, None
+        except Exception as e:
+            print(f"Error calculating motor positions: {e}")
+            return None, None
+
     def read_shared_memory(self):
         if not self.shm_read:
             return
@@ -154,6 +218,9 @@ class SharedMemoryWriter(QWidget):
             self.labels_readback['Execute'].setText(str(unpacked[3]))
             self.labels_readback['Exit'].setText(str(unpacked[4]))
 
+            # Calculate motor positions from target
+            target_x, target_y, target_z = unpacked[0], unpacked[1], unpacked[2]
+            self.calculate_motor_positions(target_x, target_y, target_z)
 
             # If execute is True, update MP input fields from shared memory values
             if unpacked[3]:  # execute == True
