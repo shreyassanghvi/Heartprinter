@@ -5,7 +5,7 @@ from PyQt5.QtWidgets import (
     QGroupBox, QPushButton, QLineEdit, QMessageBox,
 )
 from PyQt5.QtGui import QPalette, QColor, QFont, QVector3D
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 import pyqtgraph.opengl as gl
 from pyqtgraph.opengl import GLMeshItem, MeshData
 from multiprocessing import shared_memory
@@ -16,6 +16,61 @@ from compute import (
     STATUS_STRUCT_FORMAT, STATUS_STRUCT_SIZE,
     compute_plane_mesh, validate_position, compute_heart_frame_transform
 )
+
+class OrientationAxes(gl.GLViewWidget):
+    cameraChanged = pyqtSignal()  # Signal to notify camera changes
+
+    def __init__(self, size=2.0):
+        super().__init__()
+        self.setFixedSize(80, 80)
+        self.opts['distance'] = size
+        self.opts['center'] = QVector3D(0, 0, 0)
+        self.setCameraPosition(distance=size, elevation=30, azimuth=60)
+        axes = [
+            ([0, 0, 0], [1, 0, 0], (1, 0, 0, 1)),  # X Red
+            ([0, 0, 0], [0, 1, 0], (0, 1, 0, 1)),  # Y Green
+            ([0, 0, 0], [0, 0, 1], (0, 0, 1, 1)),  # Z Blue
+        ]
+        for start, end, color in axes:
+            line = gl.GLLinePlotItem(
+                pos=np.array([start, end], dtype=float),
+                color=color, width=3, antialias=True, mode='lines'
+            )
+            self.addItem(line)
+
+        self.dragging = False
+        self.last_pos = None
+
+    def mousePressEvent(self, ev):
+        if ev.button() == Qt.LeftButton:
+            self.dragging = True
+            self.last_pos = ev.pos()
+            ev.accept()
+        else:
+            super().mousePressEvent(ev)
+
+    def mouseMoveEvent(self, ev):
+        if self.dragging:
+            dx = ev.x() - self.last_pos.x()
+            dy = ev.y() - self.last_pos.y()
+            self.last_pos = ev.pos()
+
+            # Update azimuth and elevation based on mouse movement
+            azimuth = (self.opts['azimuth'] - dx) % 360
+            elevation = np.clip(self.opts['elevation'] - dy, -90, 90)
+            self.setCameraPosition(distance=self.opts['distance'], azimuth=azimuth, elevation=elevation)
+
+            self.cameraChanged.emit()
+            ev.accept()
+        else:
+            super().mouseMoveEvent(ev)
+
+    def mouseReleaseEvent(self, ev):
+        if ev.button() == Qt.LeftButton and self.dragging:
+            self.dragging = False
+            ev.accept()
+        else:
+            super().mouseReleaseEvent(ev)
 
 
 class MainWindow(QWidget):
@@ -36,9 +91,38 @@ class MainWindow(QWidget):
         self.init_shared_memory()
         self.init_visualization()
         self.init_action_buttons()
+        self.init_orientation_axes()
+
+    def init_orientation_axes(self):
+        self.orientation_axes = OrientationAxes(size=2.0)
+        self.orientation_axes.setParent(self)
+        self.orientation_axes.move(10, self.height() - 90)
+        self.orientation_axes.show()
+        self.orientation_axes.cameraChanged.connect(self.sync_main_view_to_orientation)
+
+    def sync_main_view_to_orientation(self):
+        if self.current_pos is None:
+            center = QVector3D(0, 0, 0)
+        else:
+            center = QVector3D(*self.current_pos)
+
+        opts = self.orientation_axes.opts
+        dist = opts.get('distance', 2.0)
+        azim = opts.get('azimuth', 60)
+        elev = opts.get('elevation', 30)
+
+        self.view.setCameraPosition(distance=dist, azimuth=azim, elevation=elev)
+        self.view.opts['center'] = center
+        self.view.update()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        x = 10
+        if hasattr(self, 'orientation_axes'):
+            y = self.height() - self.orientation_axes.height() - 10
+            self.orientation_axes.move(x, y)
 
     def init_visualization(self):
-        # Initialize 3D scatter plots for reference, current, and target points
         colors = np.array([
             [0, 1, 0, 1],  # Left - green
             [1, 1, 0, 1],  # Center - yellow
@@ -56,9 +140,7 @@ class MainWindow(QWidget):
             pos=np.array([self.target_pos]), size=10, color=(0, 0, 1, 1), pxMode=True)
         self.view.addItem(self.scatter_blue)
 
-        # Initialize the plane mesh for the 3 reference points
         meshdata, normal = compute_plane_mesh(self.points)
-
         self.plane_mesh = GLMeshItem(
             meshdata=meshdata,
             smooth=False,
@@ -143,7 +225,6 @@ class MainWindow(QWidget):
 
             self.point_labels_heart.append(lbl_coord)
 
-        # Target position in Heart Frame
         target_label = QLabel("Target")
         target_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         target_colon = QLabel(":")
@@ -158,13 +239,13 @@ class MainWindow(QWidget):
         grid.addWidget(self.target_heart_label, 3, 2)
 
         self.right_layout.addWidget(group)
+
     def init_action_buttons(self):
-        # Create an actions group box or layout
         action_group = QGroupBox("System Controls")
         action_layout = QVBoxLayout()
 
         self.end_button = QPushButton("End")
-        self.end_button.clicked.connect(self.end_system)  # your existing clean-up method
+        self.end_button.clicked.connect(self.end_system)
 
         self.recenter_button = QPushButton("Fit to Screen")
         self.recenter_button.clicked.connect(self.recenter_view)
@@ -173,8 +254,6 @@ class MainWindow(QWidget):
         action_layout.addWidget(self.recenter_button)
 
         action_group.setLayout(action_layout)
-
-        # Add to right panel layout
         self.right_layout.addWidget(action_group)
 
     def init_jog_controls(self):
@@ -274,7 +353,6 @@ class MainWindow(QWidget):
 
         self.right_layout.addStretch()
 
-
     def try_connect_shared_memory(self, first=False):
         try:
             self.read_shm = shared_memory.SharedMemory(
@@ -283,7 +361,7 @@ class MainWindow(QWidget):
             if not self.init_read_timer:
                 self.read_timer = QTimer(self)
                 self.read_timer.timeout.connect(self.update_status_from_shared_memory)
-                self.read_timer.start(500)  # Every 500 ms
+                self.read_timer.start(500)
                 self.init_read_timer = True
             if not first:
                 self.status_value_label.setText("Shared memory attached!")
@@ -406,30 +484,15 @@ class MainWindow(QWidget):
             self.inputs[axis].blockSignals(False)
 
     def jog_axis(self, axis, direction):
-        """
-        Jog movement in Heart Frame coordinates, transformed to global coordinates.
-
-        axis: int (0=X,1=Y,2=Z in Heart Frame)
-        direction: int (+1 or -1)
-        """
         if self.points is None or self.target_pos is None:
             return
 
-        # Step 1: Compute Heart Frame transform
-        R, centroid = compute_heart_frame_transform(self.points)  # R columns are Heart Frame axes
-
-        # Step 2: Define jog vector in Heart Frame
-        increment = 0.01  # jogging step size
+        R, centroid = compute_heart_frame_transform(self.points)
+        increment = 0.01
         jog_heart = np.zeros(3)
-        jog_heart[axis] = direction * increment  # e.g., +0.1 along Y axis of Heart Frame
-
-        # Step 3: Convert jog vector to global coordinates
+        jog_heart[axis] = direction * increment
         jog_global = R @ jog_heart
-
-        # Step 4: Apply jog in global frame to target_pos
         self.target_pos += jog_global
-
-        # Mark data changed and update UI
         self._data_changed = True
         self.update_inputs_from_target()
         self.update_labels()
@@ -449,27 +512,24 @@ class MainWindow(QWidget):
                 self.current_pos = self.target_pos.copy()
                 self._data_changed = True
                 self.update_labels()
+
     def init_shared_memory(self):
-        # Create Python -> C++ shared memory to write MotorCommand
         try:
             self.write_shm = shared_memory.SharedMemory(name="Local\\PyToCPP", create=True, size=MOTOR_STRUCT_SIZE)
         except FileExistsError:
             self.write_shm = shared_memory.SharedMemory(name="Local\\PyToCPP")
 
-        # Shared memory to read status from C++ process
         self.read_shm = None
         self.init_read_timer = False
         self.try_connect_shared_memory(first=True)
 
-        # Timer to read periodic updates from C++
         self.status_timer = QTimer(self)
         self.status_timer.timeout.connect(self.update_status_from_shared_memory)
-        self.status_timer.start(100)  # 100ms updates
+        self.status_timer.start(100)
 
-        # Timer to update 3D visualization
         self.redraw_timer = QTimer(self)
         self.redraw_timer.timeout.connect(self.redraw_if_needed)
-        self.redraw_timer.start(33)  # ~30 FPS
+        self.redraw_timer.start(33)
 
     def home_to_centroid(self):
         if self.points is not None:
@@ -485,31 +545,19 @@ class MainWindow(QWidget):
 
         centroid = np.mean(self.points, axis=0)
         R, _ = compute_heart_frame_transform(self.points)
-        plane_normal = R[:, 2]  # Z axis of Heart Frame (plane normal)
-        heart_y_axis = R[:, 1]  # Y axis (center base vector)
+        plane_normal = R[:, 2]
+        heart_y_axis = R[:, 1]
 
         camera_distance = 5.0
         self.view.opts['center'] = QVector3D(*centroid)
-
-        # Compute angle of Heart Frame Y axis in XY plane
         angle_y = np.degrees(np.arctan2(heart_y_axis[1], heart_y_axis[0]))
-
-        # Compute angle of Heart Frame X axis in XY plane for roll correction
         heart_x_axis = R[:, 0]
         angle_x = np.degrees(np.arctan2(heart_x_axis[1], heart_x_axis[0]))
-
-        # Base azimuth to point Y axis downward + 180 deg
         base_azimuth = (angle_y + 180) % 360
-
-        # Approximate roll correction: difference between X axis and ideal frame
-        # Adjust azimuth by the negative angle_x to 'roll' view flat
         adjusted_azimuth = (base_azimuth - angle_x) % 360
 
-        # Set camera looking straight down
         self.view.setCameraPosition(distance=camera_distance,
                                     azimuth=adjusted_azimuth, elevation=90)
-
-
 
     def update_labels(self):
         if self.current_pos is not None:
@@ -520,6 +568,7 @@ class MainWindow(QWidget):
             self.current_pos_labels['X'].setText("N/A")
             self.current_pos_labels['Y'].setText("N/A")
             self.current_pos_labels['Z'].setText("N/A")
+
     def end_system(self):
         self.write_to_cpp(end_flag=True)
         self.close()
@@ -558,26 +607,7 @@ class MainWindow(QWidget):
             self.write_shm = None
         event.accept()
 
-
     def line_edit_changed(self, axis, widget):
-        """
-        Handle changes to coordinate input fields.
-
-        Called when user finishes editing a coordinate input field (X, Y, or Z).
-        Validates the input, updates the target position, and refreshes the visualization.
-        Shows error dialog for invalid input and reverts to previous value.
-
-        Args:
-            axis (str): Which axis was changed ('X', 'Y', or 'Z')
-            widget (QLineEdit): The input field widget that was modified
-
-        Side effects:
-            - Updates target_pos coordinate for specified axis
-            - Moves blue target point in 3D view
-            - Updates display labels
-            - Shows error dialog for invalid input
-            - Reverts input field on error
-        """
         try:
             val = float(widget.text())
         except ValueError:
