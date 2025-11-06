@@ -17,6 +17,24 @@ from compute import (
     compute_plane_mesh, validate_position, compute_heart_frame_transform
 )
 
+class SyncableGLViewWidget(gl.GLViewWidget):
+    cameraMoved = pyqtSignal(float, float)  # azimuth, elevation
+
+    def __init__(self):
+        super().__init__()
+        self._last_azimuth = self.opts.get('azimuth', 0)
+        self._last_elevation = self.opts.get('elevation', 0)
+
+    def mouseMoveEvent(self, ev):
+        super().mouseMoveEvent(ev)
+        azim = self.opts.get('azimuth', 0)
+        elev = self.opts.get('elevation', 0)
+        # emit signal if camera orientation changes
+        if azim != self._last_azimuth or elev != self._last_elevation:
+            self._last_azimuth = azim
+            self._last_elevation = elev
+            self.cameraMoved.emit(azim, elev)
+
 class OrientationAxes(gl.GLViewWidget):
     cameraChanged = pyqtSignal()  # Signal to notify camera changes
 
@@ -152,9 +170,17 @@ class MainWindow(QWidget):
         self.view.addItem(self.plane_mesh)
 
     def init_left_panel(self):
-        self.view = gl.GLViewWidget()
+        self.view = SyncableGLViewWidget()
         self.view.setCameraPosition(distance=10, azimuth=270)
         self.main_layout.addWidget(self.view, stretch=2)
+        self.view.cameraMoved.connect(self.sync_orientation_axes_to_main_view)
+
+    def sync_orientation_axes_to_main_view(self, azimuth, elevation):
+        if hasattr(self, 'orientation_axes'):
+            distance = self.orientation_axes.opts.get('distance', 2.0)
+            self.orientation_axes.setCameraPosition(distance=distance, azimuth=azimuth, elevation=elevation)
+            self.orientation_axes.update()
+
 
     def init_right_panel(self):
         self.right_layout = QVBoxLayout()
@@ -540,24 +566,28 @@ class MainWindow(QWidget):
             self.move_to_position()
 
     def recenter_view(self):
-        if self.points is None or len(self.points) < 3:
+        if self.current_pos is None:
             return
+        distance = self.orientation_axes.opts.get('distance', 2.0)
 
-        centroid = np.mean(self.points, axis=0)
-        R, _ = compute_heart_frame_transform(self.points)
-        plane_normal = R[:, 2]
-        heart_y_axis = R[:, 1]
+        # Fixed azimuth and elevation as defaults (can adjust as needed)
+        default_azimuth = 270
+        default_elevation = 30
 
-        camera_distance = 5.0
-        self.view.opts['center'] = QVector3D(*centroid)
-        angle_y = np.degrees(np.arctan2(heart_y_axis[1], heart_y_axis[0]))
-        heart_x_axis = R[:, 0]
-        angle_x = np.degrees(np.arctan2(heart_x_axis[1], heart_x_axis[0]))
-        base_azimuth = (angle_y + 180) % 360
-        adjusted_azimuth = (base_azimuth - angle_x) % 360
+        center = QVector3D(*self.current_pos)
 
-        self.view.setCameraPosition(distance=camera_distance,
-                                    azimuth=adjusted_azimuth, elevation=90)
+        # Set main view camera to use orientation axes zoom (distance)
+        self.view.setCameraPosition(distance=distance,
+                                    azimuth=default_azimuth,
+                                    elevation=default_elevation)
+        self.view.opts['center'] = center
+        self.view.update()
+
+        # Also sync orientation axes camera rotation but keep its zoom unchanged
+        if hasattr(self, 'orientation_axes'):
+            self.orientation_axes.setCameraPosition(distance=distance,
+                                                    azimuth=default_azimuth,
+                                                    elevation=default_elevation)
 
     def update_labels(self):
         if self.current_pos is not None:
