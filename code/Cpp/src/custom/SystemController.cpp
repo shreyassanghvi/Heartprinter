@@ -791,9 +791,14 @@ void SystemController::calculateMotorPositionsFromCommand(const MotorCommand& cm
 
     // Convert mm to Dynamixel units using motor's conversion function
     if (!motors.empty()) {
-        motorDestinations[0] = motors[0].mmToDynamixelUnits(cmd.target_x);
-        motorDestinations[1] = motors[1].mmToDynamixelUnits(cmd.target_y);
-        motorDestinations[2] = motors[2].mmToDynamixelUnits(cmd.target_z);
+        for (int i = 0; i < MOTOR_CNT; i++) {
+            double dx = cmd.target_x - staticBasePositions[i].x;
+            double dy = cmd.target_y - staticBasePositions[i].y;
+            double dz = cmd.target_z - staticBasePositions[i].z;
+
+            double cable_length = sqrt(pow(dx, 2) + pow(dy, 2) + pow(dz, 2));
+            motorDestinations[i] = motors[i].mmToDynamixelUnits(cable_length);
+        }
 
         spdlog::info("SHM: Target ({:.2f}, {:.2f}, {:.2f}) -> Dest: [{:4d}, {:4d}, {:4d}]",
                     cmd.target_x, cmd.target_y, cmd.target_z,
