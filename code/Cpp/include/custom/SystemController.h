@@ -171,6 +171,7 @@ private:
     bool moveToBase(int baseIndex);
     bool detectBaseArrival(int motorIndex);
     void calculateCentroid();
+    void setMotorDestinationsForTarget(DOUBLE_POSITION_ANGLES_RECORD& targetPos);
     
 public:
     // Constructor/Destructor - RAII
@@ -190,7 +191,6 @@ public:
     
     // Motor control
     bool disableMotors();
-    bool moveToTarget(const DOUBLE_POSITION_ANGLES_RECORD& target);
     
     // Tracking control
     bool stopTracking();

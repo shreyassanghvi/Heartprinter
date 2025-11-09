@@ -463,8 +463,12 @@ States SystemController::processStateTransition(States current) {
 
             // Move to centroid position
             spdlog::info("Moving to centroid position...");
-            if (!moveToTarget(centroidPosition)) {
-                spdlog::error("Failed to move to centroid position");
+
+            setMotorDestinationsForTarget(centroidPosition);
+            spdlog::info("Motor Destinations: {}, {}, {}", motorDestinations[0], motorDestinations[1], motorDestinations[2]);
+
+            if (!moveMotorPositions()) {
+                spdlog::info("Failed to move motors.");
                 return States::ERR;
             }
             return States::READY;
@@ -473,6 +477,10 @@ States SystemController::processStateTransition(States current) {
             return States::RUNNING;
 
         case States::RUNNING:
+            // Check if motors are moving
+            if (!readMotorPositions()) {
+                return States::MOVING;
+            }
             // Check for safety conditions
             if (!performSafetyCheck(currentPosition)) {
                 spdlog::warn("Safety check failed - tension outside of normal bounds.");
@@ -484,11 +492,6 @@ States SystemController::processStateTransition(States current) {
                 }
 
                 // After adjustment, transition to MOVING state to let motors reach new positions
-                return States::MOVING;
-            }
-
-            // Check if motors are moving
-            if (!readMotorPositions()) {
                 return States::MOVING;
             }
 
@@ -711,21 +714,6 @@ SystemStatus SystemController::getSystemStatus() const {
     return status;
 }
 
-// Move to target position
-bool SystemController::moveToTarget(const DOUBLE_POSITION_ANGLES_RECORD& target) {
-    if (!performSafetyCheck(target)) {
-        spdlog::error("Target position outside safe limits");
-        return false;
-    }
-    
-    // This would be implemented with inverse kinematics
-    // For now, just update the reference position
-    spdlog::info("Moving to target: ({:.2f}, {:.2f}, {:.2f})", 
-                target.x, target.y, target.z);
-    
-    return true;
-}
-
 // Set configuration
 void SystemController::setConfiguration(const SystemConfig& newConfig) {
     if (initialized) {
@@ -806,6 +794,17 @@ void SystemController::calculateMotorPositionsFromCommand(const MotorCommand& cm
     }
 }
 
+void SystemController::setMotorDestinationsForTarget(DOUBLE_POSITION_ANGLES_RECORD& targetPos) {
+    for (int i = 0; i < MOTOR_CNT; i++) {
+        double dx = targetPos.x - staticBasePositions[i].x;
+        double dy = targetPos.y - staticBasePositions[i].y;
+        double dz = targetPos.z - staticBasePositions[i].z;
+
+        double cable_length = sqrt(pow(dx, 2) + pow(dy, 2) + pow(dz, 2));
+        motorDestinations[i] = motors[i].mmToDynamixelUnits(cable_length);
+    }
+}
+
 // Calculate motor positions from tracking data
 void SystemController::calculateMotorPositionsFromTracking() {
     double dx = currentPosition.x;
@@ -863,7 +862,6 @@ bool SystemController::moveMotorPositions() {
 
         // Use the group sync write
         for (int j = 0; j < MOTOR_CNT && j < static_cast<int>(motors.size()); j++) {
-
             if (!motors[j].setMotorDestination(&groupSyncWrite, motorDestinations[j])) {
                 spdlog::error("Failed to set motor {} destination", j);
                 return false;
@@ -1109,15 +1107,18 @@ bool SystemController::moveToBase(int baseIndex) {
         // Retract the motor associated with this base by N steps, extend the other two motors by N steps
         groupSyncWrite.clearParam();
         for (int i = 0; i < MOTOR_CNT; i++) {
-            if (i == baseIndex) {
-                // Retract this motor (increase position by calibrationMovementSteps)
-                int newPosition = motorDestinations[i] + config.calibrationMovementSteps;
-                motorDestinations[i] = std::min(newPosition, maxPos);  // Clamp to max
-            } else {
-                // Extend other motors (decrease position by calibrationMovementSteps)
-                int newPosition = motorDestinations[i] - config.calibrationMovementSteps;
-                motorDestinations[i] = std::max(newPosition, minPos);  // Clamp to min
-            }
+            int newPosition = i == baseIndex ? motorDestinations[i] + config.calibrationMovementSteps : motorDestinations[i] - config.calibrationMovementSteps;
+            // if (i == baseIndex) {
+            //     // Retract this motor (increase position by calibrationMovementSteps)
+            //     int newPosition = motorDestinations[i] + config.calibrationMovementSteps;
+            //     motorDestinations[i] = std::min(newPosition, maxPos);  // Clamp to max
+            // } else {
+            //     // Extend other motors (decrease position by calibrationMovementSteps)
+            //     int newPosition = motorDestinations[i] - config.calibrationMovementSteps;
+            //     motorDestinations[i] = std::max(newPosition, minPos);  // Clamp to min
+            // }
+            //
+            motorDestinations[i] = newPosition;
 
             if (!motors[i].setMotorDestination(&groupSyncWrite, motorDestinations[i])) {
                 spdlog::error("Failed to set destination for motor {} when moving to base {}", i, baseIndex);
@@ -1199,6 +1200,8 @@ bool SystemController::performCalibration() {
             return false;
         }
     }
+
+    groupSyncWrite.clearParam();
 
     spdlog::info("Calibration Complete");
 
