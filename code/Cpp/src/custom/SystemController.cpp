@@ -784,8 +784,14 @@ void SystemController::calculateMotorPositionsFromCommand(const MotorCommand& cm
             double dy = cmd.target_y - staticBasePositions[i].y;
             double dz = cmd.target_z - staticBasePositions[i].z;
 
-            double cable_length = sqrt(pow(dx, 2) + pow(dy, 2) + pow(dz, 2));
-            motorDestinations[i] = motors[i].mmToDynamixelUnits(cable_length);
+            double desired_cable_length = sqrt(pow(dx, 2) + pow(dy, 2) + pow(dz, 2));
+
+            int desired_step_count = motors[i].mmToDynamixelUnits(desired_cable_length);
+            int curr_step_count = motors[i].checkAndGetPresentPosition(&groupSyncRead);
+
+            int delta_step_count = curr_step_count - desired_step_count;
+            spdlog::info("SHM: Desired step count: {}; Current step count: {}; Delta step count: {}", desired_step_count, curr_step_count, delta_step_count);
+            motorDestinations[i] = curr_step_count + (curr_step_count - desired_step_count);
         }
 
         spdlog::info("SHM: Target ({:.2f}, {:.2f}, {:.2f}) -> Dest: [{:4d}, {:4d}, {:4d}]",
