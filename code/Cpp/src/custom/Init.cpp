@@ -86,8 +86,8 @@ int main(int argc, char *argv[]) {
         config.baudRate = 57600;
         config.recordCount = 1000;
         config.enableSafetyChecks = true;
-        config.maxLoadVoltage = -0.5;
-        config.minLoadVoltage = -1.0;
+        config.maxLoadVoltage = -0.01;
+        config.minLoadVoltage = -0.1;
         config.tensionAdjustmentSteps = 100;
         config.trackingDeadband = 300.0;
 
