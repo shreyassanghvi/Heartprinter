@@ -190,6 +190,24 @@ int Motor::setMotorOperationMode(dynamixel::PacketHandler *packetHandler, dynami
     return operationMode;
 }
 
+int Motor::setVelocityProfile(dynamixel::PacketHandler *packetHandler, dynamixel::PortHandler *portHandler,
+                            uint32_t velocityProfile) const {
+    int dxl_comm_result = COMM_TX_FAIL; // Communication result
+    uint8_t dxl_error = 0; // Dynamixel error
+
+    dxl_comm_result = packetHandler->write4ByteTxRx(portHandler, this->getMotorID(), ADDR_VELOCITY_PROFILE,
+                                                    velocityProfile, &dxl_error);
+    if (dxl_comm_result != COMM_SUCCESS) {
+        spdlog::error("{}", packetHandler->getTxRxResult(dxl_comm_result));
+    } else if (dxl_error != 0) {
+        spdlog::error("{}", packetHandler->getRxPacketError(dxl_error));
+    } else {
+        spdlog::info("Dynamixel#{} Velocity limit set to {} units ({:.2f} RPM)",
+                     this->getMotorID(), velocityProfile, velocityProfile * 0.229);
+    }
+    return dxl_error;
+}
+
 void Motor::ledOperationMode(dynamixel::PacketHandler *packetHandler, dynamixel::PortHandler *portHandler,
                              int ledStatus) const {
     int dxl_comm_result = COMM_TX_FAIL; // Communication result
