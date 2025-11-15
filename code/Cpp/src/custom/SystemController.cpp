@@ -242,11 +242,17 @@ bool SystemController::initializeMotors() {
             
             // Initialize each motor (logic from initMotors function in Init.cpp)
             // Set motor operation mode to extended position control
+            if (motors.back().setVelocityProfile(packetHandler, portHandler, DXL_VELOCITY_PROFILE_VALUE) != 0) {
+                spdlog::error("Failed to set velocity profile for motor {}", i);
+                return false;
+            }
+
+
             if (motors.back().setMotorOperationMode(packetHandler, portHandler, EXTENDED_POSITION_CONTROL_MODE) != EXTENDED_POSITION_CONTROL_MODE) {
                 spdlog::error("Failed to set operation mode for motor {}", i);
                 return false;
             }
-            
+
             // Enable motor torque
             if (motors.back().enableTorque(packetHandler, portHandler) != 0) {
                 spdlog::error("Failed to enable torque for motor {}", i);
@@ -254,8 +260,7 @@ bool SystemController::initializeMotors() {
             }
         }
 
-        // TODO: Remove this because its deprecated
-        // for (int calCycle = 0; calCycle< 3; calCycle++) {
+        // for (int calCycle = 0; calCycle< 1; calCycle++) {
         //     groupSyncWrite.clearParam();
         //     for (int i = 0; i < MOTOR_CNT; i++) {
         //         motorDestinations[i] = caliberationDestination[calCycle];
@@ -275,27 +280,6 @@ bool SystemController::initializeMotors() {
         //     }
         // }
         // groupSyncWrite.clearParam();
-
-        for (int calCycle = 0; calCycle< 1; calCycle++) {
-            groupSyncWrite.clearParam();
-            for (int i = 0; i < MOTOR_CNT; i++) {
-                motorDestinations[i] = caliberationDestination[calCycle];
-                if (!motors[i].setMotorDestination(&groupSyncWrite, motorDestinations[i])) {
-                    spdlog::error("Failed to set to {} position for motor {}", motorDestinations[i], i);
-                    return false;
-                }
-            }
-
-            int dxl_comm_result = groupSyncWrite.txPacket();
-            if (dxl_comm_result != COMM_SUCCESS) {
-                spdlog::error("Failed to execute movement to {} motor position: {}", caliberationDestination[calCycle],  packetHandler->getTxRxResult(dxl_comm_result));
-                return false;
-            }
-            while(!this->readMotorPositions()) {
-                ;
-            }
-        }
-        groupSyncWrite.clearParam();
 
         spdlog::info("Motor controllers initialized successfully - torque enabled");
         return true;
@@ -467,6 +451,8 @@ States SystemController::processStateTransition(States current) {
             setMotorDestinationsForTarget(centroidPosition);
             spdlog::info("Motor Destinations: {}, {}, {}", motorDestinations[0], motorDestinations[1], motorDestinations[2]);
 
+            sharedMemory->writeStatusUpdate(currentPosition, staticBasePositions, currentStateToString());
+
             if (!moveMotorPositions()) {
                 spdlog::info("Failed to move motors.");
                 return States::ERR;
@@ -505,11 +491,11 @@ States SystemController::processStateTransition(States current) {
             }
 
             // Check for safety conditions while moving
-            if (!performSafetyCheck(currentPosition)) {
-                spdlog::warn("Safety check failed - tension outside of normal bounds.");
-                // TODO: Adjust the motor positions? We need to relieve or increase tension.
-                //  Should this be a different function? executeTensionAdjustment?
-            }
+            // if (!performSafetyCheck(currentPosition)) {
+            //     spdlog::warn("Safety check failed - tension outside of normal bounds.");
+            //     // TODO: Adjust the motor positions? We need to relieve or increase tension.
+            //     //  Should this be a different function? executeTensionAdjustment?
+            // }
 
             return States::MOVING;
 
