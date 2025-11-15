@@ -77,17 +77,17 @@ bool SystemController::initialize() {
             spdlog::warn("Failed to initialize shared memory - continuing without it");
         }
 
-        sharedMemory->writeStatusUpdate(currentPosition.x, currentPosition.y, currentPosition.z, currentStateToString());
+        sharedMemory->writeStatusUpdate(currentPosition, staticBasePositions, currentStateToString());
 
         if (!initializeHardware()) {
-            handleError(SystemException(SystemError::MOTOR_INIT_FAILED, 
+            handleError(SystemException(SystemError::MOTOR_INIT_FAILED,
                                       "Failed to initialize hardware"));
             return false;
         }
-        currentState = States::READY;
+        currentState = States::CALIBRATION;
         initialized = true;
 
-        sharedMemory->writeStatusUpdate(currentPosition.x, currentPosition.y, currentPosition.z, currentStateToString());
+        sharedMemory->writeStatusUpdate(currentPosition, staticBasePositions, currentStateToString());
         spdlog::info("System initialization complete - Ready for operation");
         return true;
     } catch (const SystemException& e) {
@@ -242,11 +242,17 @@ bool SystemController::initializeMotors() {
             
             // Initialize each motor (logic from initMotors function in Init.cpp)
             // Set motor operation mode to extended position control
+            if (motors.back().setVelocityProfile(packetHandler, portHandler, DXL_VELOCITY_PROFILE_VALUE) != 0) {
+                spdlog::error("Failed to set velocity profile for motor {}", i);
+                return false;
+            }
+
+
             if (motors.back().setMotorOperationMode(packetHandler, portHandler, EXTENDED_POSITION_CONTROL_MODE) != EXTENDED_POSITION_CONTROL_MODE) {
                 spdlog::error("Failed to set operation mode for motor {}", i);
                 return false;
             }
-            
+
             // Enable motor torque
             if (motors.back().enableTorque(packetHandler, portHandler) != 0) {
                 spdlog::error("Failed to enable torque for motor {}", i);
@@ -254,8 +260,7 @@ bool SystemController::initializeMotors() {
             }
         }
 
-        // TODO: Remove this because its deprecated
-        // for (int calCycle = 0; calCycle< 3; calCycle++) {
+        // for (int calCycle = 0; calCycle< 1; calCycle++) {
         //     groupSyncWrite.clearParam();
         //     for (int i = 0; i < MOTOR_CNT; i++) {
         //         motorDestinations[i] = caliberationDestination[calCycle];
@@ -275,27 +280,6 @@ bool SystemController::initializeMotors() {
         //     }
         // }
         // groupSyncWrite.clearParam();
-
-        for (int calCycle = 0; calCycle< 1; calCycle++) {
-            groupSyncWrite.clearParam();
-            for (int i = 0; i < MOTOR_CNT; i++) {
-                motorDestinations[i] = caliberationDestination[calCycle];
-                if (!motors[i].setMotorDestination(&groupSyncWrite, motorDestinations[i])) {
-                    spdlog::error("Failed to set to {} position for motor {}", motorDestinations[i], i);
-                    return false;
-                }
-            }
-
-            int dxl_comm_result = groupSyncWrite.txPacket();
-            if (dxl_comm_result != COMM_SUCCESS) {
-                spdlog::error("Failed to execute movement to {} motor position: {}", caliberationDestination[calCycle],  packetHandler->getTxRxResult(dxl_comm_result));
-                return false;
-            }
-            while(!this->readMotorPositions()) {
-                ;
-            }
-        }
-        groupSyncWrite.clearParam();
 
         spdlog::info("Motor controllers initialized successfully - torque enabled");
         return true;
@@ -333,6 +317,9 @@ bool SystemController::initializeTracker() {
 
 // Main control loop
 void SystemController::run() {
+    // Go through calibration
+    currentState = processStateTransition(currentState);
+
     if (currentState != States::READY) {
         spdlog::error("System not ready - current state: {}", 
                      static_cast<int>(currentState));
@@ -357,7 +344,7 @@ void SystemController::run() {
                 currentState = newState;
                 spdlog::info("{} -> {}", state_str, currentStateToString());
             }
-            sharedMemory->writeStatusUpdate(currentPosition.x, currentPosition.y, currentPosition.z, currentStateToString());
+            sharedMemory->writeStatusUpdate(currentPosition, staticBasePositions, currentStateToString());
 
             // Break if we're no longer in a valid running state
             if (currentState != States::RUNNING && currentState != States::MOVING) {
@@ -366,7 +353,11 @@ void SystemController::run() {
             
             // Read tracking data
             try {
-                currentPosition = readATI(0); // Read from first sensor directly
+                // TODO: We need to refactor this, right now readATI returns the last connected sensor
+                //  It doesn't actually respect the sensor ID that you pass through.
+                //  validateProbe does actually set the staticBasePositions for bases with connected sensors.
+                validateProbes();
+                currentPosition = readATI(3); // Read from first sensor directly
 
                 dataCount++;
 
@@ -434,12 +425,48 @@ States SystemController::processStateTransition(States current) {
             return States::INITIALIZING;
 
         case States::INITIALIZING:
+            return States::CALIBRATION;
+
+        case States::CALIBRATION:
+            // Check if all 4 probes are returning values
+            if (!validateProbes())
+            {
+                spdlog::error("Missing probe detected, going into calibration routine");
+
+                // If calibration is not yet complete, perform it
+                spdlog::info("Starting calibration routine...");
+                if (!performCalibration())
+                {
+                    spdlog::error("Calibration routine failed");
+                    return States::ERR;
+                }
+            }
+
+            // Calculate centroid of the three base positions
+            calculateCentroid();
+
+            // Move to centroid position
+            spdlog::info("Moving to centroid position...");
+
+            setMotorDestinationsForTarget(centroidPosition);
+            spdlog::info("Motor Destinations: {}, {}, {}", motorDestinations[0], motorDestinations[1], motorDestinations[2]);
+
+            sharedMemory->writeStatusUpdate(currentPosition, staticBasePositions, currentStateToString());
+
+            if (!moveMotorPositions()) {
+                spdlog::info("Failed to move motors.");
+                return States::ERR;
+            }
             return States::READY;
 
         case States::READY:
             return States::RUNNING;
 
         case States::RUNNING:
+            // Check if motors are moving
+            if (!readMotorPositions()) {
+                return States::MOVING;
+            }
             // Check for safety conditions
             if (!performSafetyCheck(currentPosition)) {
                 spdlog::warn("Safety check failed - tension outside of normal bounds.");
@@ -454,11 +481,6 @@ States SystemController::processStateTransition(States current) {
                 return States::MOVING;
             }
 
-            // Check if motors are moving
-            if (!readMotorPositions()) {
-                return States::MOVING;
-            }
-
             return States::RUNNING;
 
         case States::MOVING:
@@ -469,11 +491,11 @@ States SystemController::processStateTransition(States current) {
             }
 
             // Check for safety conditions while moving
-            if (!performSafetyCheck(currentPosition)) {
-                spdlog::warn("Safety check failed - tension outside of normal bounds.");
-                // TODO: Adjust the motor positions? We need to relieve or increase tension.
-                //  Should this be a different function? executeTensionAdjustment?
-            }
+            // if (!performSafetyCheck(currentPosition)) {
+            //     spdlog::warn("Safety check failed - tension outside of normal bounds.");
+            //     // TODO: Adjust the motor positions? We need to relieve or increase tension.
+            //     //  Should this be a different function? executeTensionAdjustment?
+            // }
 
             return States::MOVING;
 
@@ -616,7 +638,7 @@ void SystemController::shutdown() {
     spdlog::info("Shutting down system...");
     currentState = States::CLEANUP;
 
-    sharedMemory->writeStatusUpdate(currentPosition.x, currentPosition.y, currentPosition.z, currentStateToString());
+    sharedMemory->writeStatusUpdate(currentPosition, staticBasePositions, currentStateToString());
     try {
         // Stop all operations
         stopAnalogAcquisition();
@@ -678,21 +700,6 @@ SystemStatus SystemController::getSystemStatus() const {
     return status;
 }
 
-// Move to target position
-bool SystemController::moveToTarget(const DOUBLE_POSITION_ANGLES_RECORD& target) {
-    if (!performSafetyCheck(target)) {
-        spdlog::error("Target position outside safe limits");
-        return false;
-    }
-    
-    // This would be implemented with inverse kinematics
-    // For now, just update the reference position
-    spdlog::info("Moving to target: ({:.2f}, {:.2f}, {:.2f})", 
-                target.x, target.y, target.z);
-    
-    return true;
-}
-
 // Set configuration
 void SystemController::setConfiguration(const SystemConfig& newConfig) {
     if (initialized) {
@@ -710,6 +717,7 @@ std::string SystemController::currentStateToString() const {
     switch (currentState) {
         case States::START: return "START";
         case States::INITIALIZING: return "INIT";
+        case States::CALIBRATION: return "CALIB";
         case States::READY: return "READY";
         case States::RUNNING: return "RUN";
         case States::MOVING: return "MOVE";
@@ -727,7 +735,7 @@ bool SystemController::readSharedMemoryCommand(MotorCommand& cmd) {
     }
 
     // Update status in shared memory
-    sharedMemory->writeStatusUpdate(currentPosition.x, currentPosition.y, currentPosition.z, currentStateToString());
+    sharedMemory->writeStatusUpdate(currentPosition, staticBasePositions, currentStateToString());
 
     // Try to read shared memory command
     if (!sharedMemory->readMotorCommand(cmd)) {
@@ -757,13 +765,35 @@ void SystemController::calculateMotorPositionsFromCommand(const MotorCommand& cm
 
     // Convert mm to Dynamixel units using motor's conversion function
     if (!motors.empty()) {
-        motorDestinations[0] = motors[0].mmToDynamixelUnits(cmd.target_x);
-        motorDestinations[1] = motors[1].mmToDynamixelUnits(cmd.target_y);
-        motorDestinations[2] = motors[2].mmToDynamixelUnits(cmd.target_z);
+        for (int i = 0; i < MOTOR_CNT; i++) {
+            double dx = cmd.target_x - staticBasePositions[i].x;
+            double dy = cmd.target_y - staticBasePositions[i].y;
+            double dz = cmd.target_z - staticBasePositions[i].z;
+
+            double desired_cable_length = sqrt(pow(dx, 2) + pow(dy, 2) + pow(dz, 2));
+
+            int desired_step_count = motors[i].mmToDynamixelUnits(desired_cable_length);
+            int curr_step_count = motors[i].checkAndGetPresentPosition(&groupSyncRead);
+
+            int delta_step_count = curr_step_count - desired_step_count;
+            spdlog::info("SHM: Desired step count: {}; Current step count: {}; Delta step count: {}", desired_step_count, curr_step_count, delta_step_count);
+            motorDestinations[i] = curr_step_count + (curr_step_count - desired_step_count);
+        }
 
         spdlog::info("SHM: Target ({:.2f}, {:.2f}, {:.2f}) -> Dest: [{:4d}, {:4d}, {:4d}]",
                     cmd.target_x, cmd.target_y, cmd.target_z,
                     motorDestinations[0], motorDestinations[1], motorDestinations[2]);
+    }
+}
+
+void SystemController::setMotorDestinationsForTarget(DOUBLE_POSITION_ANGLES_RECORD& targetPos) {
+    for (int i = 0; i < MOTOR_CNT; i++) {
+        double dx = targetPos.x - staticBasePositions[i].x;
+        double dy = targetPos.y - staticBasePositions[i].y;
+        double dz = targetPos.z - staticBasePositions[i].z;
+
+        double cable_length = sqrt(pow(dx, 2) + pow(dy, 2) + pow(dz, 2));
+        motorDestinations[i] = motors[i].mmToDynamixelUnits(cable_length);
     }
 }
 
@@ -824,7 +854,6 @@ bool SystemController::moveMotorPositions() {
 
         // Use the group sync write
         for (int j = 0; j < MOTOR_CNT && j < static_cast<int>(motors.size()); j++) {
-
             if (!motors[j].setMotorDestination(&groupSyncWrite, motorDestinations[j])) {
                 spdlog::error("Failed to set motor {} destination", j);
                 return false;
@@ -947,6 +976,226 @@ bool SystemController::adjustTensionBasedOnLoadCells() {
     } else {
         spdlog::debug("No tension adjustment needed - all loads within acceptable range");
     }
+
+    return true;
+}
+
+// Calibration Functions
+
+// Validate that all 4 probes are returning valid data
+// Also stores the static base positions (sensors 0-2) into staticBasePositions array
+bool SystemController::validateProbes() {
+    spdlog::info("Validating tracking probes...");
+
+    int sensorCount = getConnectedSensors();
+    spdlog::info("Found {} connected sensors", sensorCount);
+
+    bool all_connected = true;
+
+    if (sensorCount < 4) {
+        spdlog::error("Insufficient sensors detected. Expected 4 sensors (1 moving + 3 static bases), found {}", sensorCount);
+        all_connected = false;
+    }
+
+    // Try to read from all 4 sensors
+    for (short sensorID = 0; sensorID < 4; sensorID++) {
+        DOUBLE_POSITION_ANGLES_RECORD record;
+        record.x = -100;
+        record.y = -100;
+        record.z = -100;
+
+        int errorCode = GetAsynchronousRecord(sensorID, &record, sizeof(record));
+        if (errorCode != BIRD_ERROR_SUCCESS) {
+            spdlog::error("Failed to read from sensor {}", sensorID);
+            all_connected = false;
+            continue;
+        }
+
+        unsigned int status = GetSensorStatus(sensorID);
+        if (status != VALID_STATUS) {
+            spdlog::error("Sensor {} status invalid: 0x{:X}", sensorID, status);
+            all_connected = false;
+            continue;
+        }
+
+        spdlog::info("Sensor {} validated: ({:.2f}, {:.2f}, {:.2f})",
+                    sensorID, record.x, record.y, record.z);
+
+        // Store static base positions (sensors 0, 1, 2)
+        if (sensorID < 3) {
+            staticBasePositions[sensorID] = record;
+            spdlog::info("Static base {} position stored: ({:.2f}, {:.2f}, {:.2f})",
+                        sensorID, record.x, record.y, record.z);
+        }
+    }
+
+    spdlog::info("All 4 probes connected?: {}", all_connected);
+    spdlog::info("Static base positions recorded for connected sensors.");
+    return all_connected;
+}
+
+// Detect if motors have reached the base by checking position stability
+// Returns true if the motor has stalled (not moving AND not at commanded position)
+bool SystemController::detectBaseArrival(int motorIndex) {
+    if (motorIndex < 0 || motorIndex >= MOTOR_CNT) {
+        spdlog::error("Invalid motor index for base arrival detection: {}", motorIndex);
+        return false;
+    }
+
+    int previousPosition = -1;
+    int stableReadCount = 0;
+
+    spdlog::debug("Waiting for motor {} to stall at base...", motorIndex);
+
+    while (stableReadCount < config.calibrationStabilityReads) {
+        // Read current motor position
+        int currentPos = motors[motorIndex].checkAndGetPresentPosition(&groupSyncRead);
+
+        // Check if we've reached the commanded position
+        if (motors[motorIndex].checkIfAtGoalPosition(motorDestinations[motorIndex])) {
+            spdlog::debug("Motor {} reached commanded position {} - not stalled",
+                         motorIndex, motorDestinations[motorIndex]);
+            return false;  // Motor reached target, not blocked by base
+        }
+
+        // Check if position has changed significantly from previous read
+        if (previousPosition != -1) {
+            int posDiff = std::abs(currentPos - previousPosition);
+            if (posDiff > config.calibrationPositionTolerance) {
+                // Motor is still moving, reset stable count
+                stableReadCount = 0;
+                spdlog::debug("Motor {} still moving: pos={}, diff={}", motorIndex, currentPos, posDiff);
+            } else {
+                // Motor position hasn't changed - increment stable count
+                stableReadCount++;
+                spdlog::debug("Motor {} stable read {}/{}: pos={}",
+                             motorIndex, stableReadCount, config.calibrationStabilityReads, currentPos);
+            }
+        }
+
+        previousPosition = currentPos;
+
+        // Small delay between reads
+        Sleep(100);
+    }
+
+    spdlog::info("Motor {} stalled at base (stable for {} reads at position {})",
+                motorIndex, config.calibrationStabilityReads, previousPosition);
+    return true;
+}
+
+// Move to a specific static base by retracting one motor and extending the others
+bool SystemController::moveToBase(int baseIndex) {
+    if (baseIndex < 0 || baseIndex >= 3) {
+        spdlog::error("Invalid base index: {}. Must be 0-2", baseIndex);
+        return false;
+    }
+
+    spdlog::info("Moving to static base {}...", baseIndex);
+
+    bool baseReached = false;
+    while (!baseReached) {
+        // Set motor destinations
+        // Retract the motor associated with this base by N steps, extend the other two motors by N steps
+        groupSyncWrite.clearParam();
+        for (int i = 0; i < MOTOR_CNT; i++) {
+            int newPosition = i == baseIndex ? motorDestinations[i] + config.calibrationMovementSteps : motorDestinations[i] - config.calibrationMovementSteps;
+            // if (i == baseIndex) {
+            //     // Retract this motor (increase position by calibrationMovementSteps)
+            //     int newPosition = motorDestinations[i] + config.calibrationMovementSteps;
+            //     motorDestinations[i] = std::min(newPosition, maxPos);  // Clamp to max
+            // } else {
+            //     // Extend other motors (decrease position by calibrationMovementSteps)
+            //     int newPosition = motorDestinations[i] - config.calibrationMovementSteps;
+            //     motorDestinations[i] = std::max(newPosition, minPos);  // Clamp to min
+            // }
+            //
+            motorDestinations[i] = newPosition;
+
+            if (!motors[i].setMotorDestination(&groupSyncWrite, motorDestinations[i])) {
+                spdlog::error("Failed to set destination for motor {} when moving to base {}", i, baseIndex);
+                return false;
+            }
+
+            spdlog::info("Motor {} destination set to {} (base {} calibration)", i, motorDestinations[i], baseIndex);
+        }
+
+        // Execute movement
+        int dxl_comm_result = groupSyncWrite.txPacket();
+        if (dxl_comm_result != COMM_SUCCESS) {
+            spdlog::error("Failed to execute movement to base {}: {}",
+                         baseIndex, packetHandler->getTxRxResult(dxl_comm_result));
+            return false;
+        }
+
+        // Wait for arrival at base by checking if the retracting motor has stalled
+        if (detectBaseArrival(baseIndex)) {
+            spdlog::info("Base {} reached - motor {} stalled", baseIndex, baseIndex);
+            baseReached = true;
+        } else {
+            spdlog::debug("Motor {} not yet stalled, continuing movement to base {}", baseIndex, baseIndex);
+        }
+    }
+
+    // Read and store the tracking position at this base
+    try {
+        staticBasePositions[baseIndex] = readATI(3); // Read from moving base sensor
+        spdlog::info("Base {} position recorded: ({:.2f}, {:.2f}, {:.2f})",
+                    baseIndex,
+                    staticBasePositions[baseIndex].x,
+                    staticBasePositions[baseIndex].y,
+                    staticBasePositions[baseIndex].z);
+    } catch (const std::exception& e) {
+        spdlog::error("Failed to read tracking position at base {}: {}", baseIndex, e.what());
+        return false;
+    }
+
+    return true;
+}
+
+// Calculate the centroid of the three static base positions
+void SystemController::calculateCentroid() {
+    spdlog::info("Calculating centroid of static base positions...");
+
+    centroidPosition.x = (staticBasePositions[0].x + staticBasePositions[1].x + staticBasePositions[2].x) / 3.0;
+    centroidPosition.y = (staticBasePositions[0].y + staticBasePositions[1].y + staticBasePositions[2].y) / 3.0;
+    centroidPosition.z = (staticBasePositions[0].z + staticBasePositions[1].z + staticBasePositions[2].z) / 3.0;
+
+    spdlog::info("Centroid position: ({:.2f}, {:.2f}, {:.2f})",
+                centroidPosition.x, centroidPosition.y, centroidPosition.z);
+}
+
+// Perform full calibration routine
+bool SystemController::performCalibration() {
+    spdlog::info("Starting Calibration Routine");
+
+    // Record initial position (first base position is starting position)
+    try {
+        staticBasePositions[1] = readATI(3);
+        spdlog::info("Initial position (base 0) recorded: ({:.2f}, {:.2f}, {:.2f})",
+                    staticBasePositions[0].x,
+                    staticBasePositions[0].y,
+                    staticBasePositions[0].z);
+    } catch (const std::exception& e) {
+        spdlog::error("Failed to read initial position: {}", e.what());
+        return false;
+    }
+
+    // Move to the other two static bases and record their positions
+    for (int baseIndex = 0; baseIndex < 3; baseIndex++) {
+        if (baseIndex == 1) {
+            continue;
+        }
+
+        if (!moveToBase(baseIndex)) {
+            spdlog::error("Failed to move to base {}", baseIndex);
+            return false;
+        }
+    }
+
+    groupSyncWrite.clearParam();
+
+    spdlog::info("Calibration Complete");
 
     return true;
 }

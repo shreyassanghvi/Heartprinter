@@ -221,7 +221,9 @@ bool SharedMemoryManager::writeMotorCommand(const MotorCommand& command) {
 }
 
 // Write status update to shared memory
-bool SharedMemoryManager::writeStatusUpdate(double x, double y, double z, const std::string& status) {
+bool SharedMemoryManager::writeStatusUpdate(const DOUBLE_POSITION_ANGLES_RECORD& currentPos,
+                                           const DOUBLE_POSITION_ANGLES_RECORD basePositions[3],
+                                           const std::string& status) {
     if (!initialized) {
         return false;
     }
@@ -229,21 +231,44 @@ bool SharedMemoryManager::writeStatusUpdate(double x, double y, double z, const 
     if (!pStatusUpdateSharedData) {
         return false;
     }
-    
+
     try {
         StatusUpdate msg;
-        msg.current_x = x;
-        msg.current_y = y;
-        msg.current_z = z;
-        
+
+        // Base 1 position
+        msg.base1_x = basePositions[0].x;
+        msg.base1_y = basePositions[0].y;
+        msg.base1_z = basePositions[0].z;
+
+        // Base 2 position
+        msg.base2_x = basePositions[1].x;
+        msg.base2_y = basePositions[1].y;
+        msg.base2_z = basePositions[1].z;
+
+        // Base 3 position
+        msg.base3_x = basePositions[2].x;
+        msg.base3_y = basePositions[2].y;
+        msg.base3_z = basePositions[2].z;
+
+        // Current position (moving base)
+        msg.current_x = currentPos.x;
+        msg.current_y = currentPos.y;
+        msg.current_z = currentPos.z;
+
+        // Status string
         size_t copy_len = std::min(status.length(), size_t(5));
         strncpy_s(msg.status, sizeof(msg.status), status.c_str(), copy_len);
         msg.status[copy_len] = '\0';
-        
+
         memset(msg.padding, 0, sizeof(msg.padding));
         memcpy(pStatusUpdateSharedData, &msg, sizeof(StatusUpdate));
-        
-        spdlog::debug("Status update written: ({:.2f}, {:.2f}, {:.2f}) - {}", x, y, z, status);
+
+        spdlog::debug("Status update written: Base1({:.2f}, {:.2f}, {:.2f}) Base2({:.2f}, {:.2f}, {:.2f}) Base3({:.2f}, {:.2f}, {:.2f}) Current({:.2f}, {:.2f}, {:.2f}) - {}",
+                     basePositions[0].x, basePositions[0].y, basePositions[0].z,
+                     basePositions[1].x, basePositions[1].y, basePositions[1].z,
+                     basePositions[2].x, basePositions[2].y, basePositions[2].z,
+                     currentPos.x, currentPos.y, currentPos.z,
+                     status);
         return true;
     } catch (const std::exception& e) {
         spdlog::error("Exception writing status update: {}", e.what());

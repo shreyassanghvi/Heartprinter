@@ -26,7 +26,9 @@
 #define DXL_MINIMUM_POSITION_VALUE 0
 #define DXL_MAXIMUM_POSITION_VALUE 4095
 
-
+#define ADDR_VELOCITY_PROFILE        112
+#define LEN_PROFILE_VELOCITY         4
+#define DXL_VELOCITY_PROFILE_VALUE   22  // ~5 RPM (unit: 0.229 rpm)
 
 struct DynamixelMotor {
     int DXL_ID;
@@ -56,6 +58,9 @@ public:
 
     int setMotorOperationMode(dynamixel::PacketHandler *packetHandler, dynamixel::PortHandler *portHandler,
                               int operationMode) const;
+
+    int setVelocityProfile(dynamixel::PacketHandler *packetHandler, dynamixel::PortHandler *portHandler,
+                         uint32_t velocityProfile) const;
 
     void ledOperationMode(dynamixel::PacketHandler *packetHandler, dynamixel::PortHandler *portHandler,
                           int ledStatus) const;

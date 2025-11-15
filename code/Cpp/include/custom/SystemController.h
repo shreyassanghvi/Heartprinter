@@ -32,6 +32,7 @@ struct AnalogConfig;
 enum class States {
     START,
     INITIALIZING,
+    CALIBRATION,
     READY,
     RUNNING,
     MOVING,
@@ -76,6 +77,11 @@ struct SystemConfig {
 
     // Tracking configuration
     double trackingDeadband = 300.0;    // Deadband for tracking position (mm)
+
+    // Calibration configuration
+    int calibrationStabilityReads = 10;      // Number of consistent reads to detect base arrival
+    double calibrationPositionTolerance = 5.0; // Position tolerance in motor units for stability detection
+    int calibrationMovementSteps = 100;     // Number of motor steps to move during calibration base detection
 };
 
 // System status
@@ -134,6 +140,10 @@ private:
     std::atomic<bool> daqDataAvailable{false};
     double daqChannelAverages[3] = {0.0, 0.0, 0.0};
 
+    // Calibration data
+    DOUBLE_POSITION_ANGLES_RECORD staticBasePositions[3] = {};  // Positions of the 3 static bases
+    DOUBLE_POSITION_ANGLES_RECORD centroidPosition = {};        // Calculated centroid position
+
     // Internal methods
     bool initializeHardware();
     bool initializeMotors();
@@ -154,6 +164,14 @@ private:
     bool moveMotorPositions();
     bool readMotorPositions();
     bool adjustTensionBasedOnLoadCells();
+
+    // Calibration methods
+    bool validateProbes();
+    bool performCalibration();
+    bool moveToBase(int baseIndex);
+    bool detectBaseArrival(int motorIndex);
+    void calculateCentroid();
+    void setMotorDestinationsForTarget(DOUBLE_POSITION_ANGLES_RECORD& targetPos);
     
 public:
     // Constructor/Destructor - RAII
@@ -173,7 +191,6 @@ public:
     
     // Motor control
     bool disableMotors();
-    bool moveToTarget(const DOUBLE_POSITION_ANGLES_RECORD& target);
     
     // Tracking control
     bool stopTracking();

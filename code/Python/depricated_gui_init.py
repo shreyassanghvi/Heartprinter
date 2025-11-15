@@ -5,7 +5,7 @@ from PyQt5.QtWidgets import (
     QApplication, QWidget, QHBoxLayout, QVBoxLayout, QGridLayout, QLabel,
     QGroupBox, QPushButton, QLineEdit, QMessageBox,
 )
-from PyQt5.QtGui import QPalette, QColor, QFont
+from PyQt5.QtGui import QPalette, QColor, QFont, QVector3D
 from PyQt5.QtCore import Qt, QTimer
 import pyqtgraph.opengl as gl
 from pyqtgraph.opengl import MeshData, GLMeshItem
@@ -15,6 +15,7 @@ import struct
 import time
 from dataclasses import dataclass
 
+
 @dataclass
 class MotorCommand:
     target_x: float
@@ -23,18 +24,23 @@ class MotorCommand:
     execute: bool
     exit: bool
 
+
 MOTOR_STRUCT_FORMAT = 'ddd??5x'
 MOTOR_STRUCT_SIZE = struct.calcsize(MOTOR_STRUCT_FORMAT)
 
+
 @dataclass
 class HeartprinterStatus:
-    current_x: float
-    current_y: float
-    current_z: float
+    current_baseL: [float, float, float]
+    current_baseC: [float, float, float]
+    current_baseR: [float, float, float]
+    current_baseMP: [float, float, float]
     status: str
 
-STATUS_STRUCT_FORMAT = 'ddd6s2x'
+
+STATUS_STRUCT_FORMAT = 'dddddddddddd6s2x'
 STATUS_STRUCT_SIZE = struct.calcsize(STATUS_STRUCT_FORMAT)
+
 
 def read_all_points(filename):
     """
@@ -69,6 +75,7 @@ def read_all_points(filename):
     else:
         return None
 
+
 def compute_plane_mesh(points):
     """
     Generate a 3D triangular mesh representation of a plane defined by three points.
@@ -86,7 +93,7 @@ def compute_plane_mesh(points):
             - normal_vector: Unit vector perpendicular to the plane surface
     """
     p0, p1, p2 = points[0], points[1], points[2]
-    
+
     # Create two vectors along the edges of the triangle
     v1 = p1 - p0
     v2 = p2 - p0
@@ -97,24 +104,24 @@ def compute_plane_mesh(points):
 
     # Create subdivided triangular mesh using rectangular coordinates
     n_grid = 15  # Subdivision level
-    
+
     vertices = []
     faces = []
-    
+
     # Generate vertices using rectangular grid within triangle
     for i in range(n_grid + 1):
         for j in range(n_grid + 1 - i):  # This creates the triangular shape
             # Use normalized coordinates (0 to 1)
             u = i / n_grid  # Parameter along v1 direction
             v = j / n_grid  # Parameter along v2 direction
-            
+
             # Calculate 3D position: start at p0, move along v1 and v2
             point = p0 + u * v1 + v * v2
             vertices.append(point)
-    
+
     # Convert to numpy array
     vertices = np.array(vertices)
-    
+
     # Generate faces connecting the vertices
     vertex_idx = 0
     for i in range(n_grid + 1):
@@ -123,14 +130,14 @@ def compute_plane_mesh(points):
                 # Calculate indices for current row and next row
                 curr_row_start = vertex_idx
                 next_row_start = curr_row_start + (n_grid + 1 - i)
-                
+
                 # First triangle of the quad
                 faces.append([
                     curr_row_start,
                     curr_row_start + 1,
                     next_row_start
                 ])
-                
+
                 # Second triangle (if not at the edge)
                 if j < n_grid - i - 1:
                     faces.append([
@@ -139,10 +146,11 @@ def compute_plane_mesh(points):
                         next_row_start
                     ])
             vertex_idx += 1
-    
+
     faces = np.array(faces)
     meshdata = MeshData(vertexes=vertices, faces=faces)
     return meshdata, normal
+
 
 def show_error_and_exit(self, message):
     dlg = QMessageBox(self)
@@ -152,6 +160,7 @@ def show_error_and_exit(self, message):
     dlg.setStandardButtons(QMessageBox.Ok)
     dlg.buttonClicked.connect(lambda _: sys.exit(1))
     dlg.exec_()
+
 
 class MainWindow(QWidget):
     """
@@ -172,6 +181,7 @@ class MainWindow(QWidget):
     - Direct coordinate input
     - Home button (move to centroid of reference points)
     """
+
     def __init__(self):
         """
         Initialize the main window and set up the complete user interface.
@@ -197,7 +207,7 @@ class MainWindow(QWidget):
 
         right_group = QGroupBox("Points Coordinates")
         self.right_layout = QVBoxLayout()
-        coord_grid_layout = QGridLayout()
+        global_frame_of_reference = QGridLayout()
         self.point_labels_3green = []
         right_group.setLayout(self.right_layout)
         right_panel.addWidget(right_group)
@@ -296,21 +306,20 @@ class MainWindow(QWidget):
         self.end_button = QPushButton("End")
         self.end_button.clicked.connect(self.end_system)
         right_panel.addWidget(self.end_button)
+        self.recenter_button = QPushButton("Recenter View")
+        self.recenter_button.clicked.connect(self.recenter_view)
+        right_panel.addWidget(self.recenter_button)
 
         # === INITIALIZE APPLICATION DATA ===
         self.setLayout(main_layout)
 
         # Load points
-        self.current_pos = None
-        self.points = None
-        self.target_pos = None
+        self.points = np.zeros((3, 3))  # Three reference points at origin
+        self.fourth_point = np.zeros(3)  # Fourth point at origin
+        self.current_pos = self.fourth_point.copy()
+        self.target_pos = np.mean(self.points, axis=0)
+        self.heart_rotation = np.eye(3)
 
-        pts = read_all_points('input.txt')
-        if pts is None or len(pts) < 4:
-            show_error_and_exit(self, "Input file must contain at least 4 valid points.")
-        else:
-            self.points = pts[:3]
-            self.fourth_point = pts[3]
         labels = ["Left", "Center", "Right"]
         for i, p in enumerate(self.points):
             lbl_name = QLabel(labels[i])
@@ -323,17 +332,64 @@ class MainWindow(QWidget):
             lbl_colon.setFont(colon_font)
             lbl_coord = QLabel(f"({p[0]:.3f}, {p[1]:.3f}, {p[2]:.3f})")
             lbl_coord.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-            coord_grid_layout.addWidget(lbl_name, i, 0)
-            coord_grid_layout.addWidget(lbl_colon, i, 1)
-            coord_grid_layout.addWidget(lbl_coord, i, 2)
+            global_frame_of_reference.addWidget(lbl_name, i, 0)
+            global_frame_of_reference.addWidget(lbl_colon, i, 1)
+            global_frame_of_reference.addWidget(lbl_coord, i, 2)
         for i in reversed(range(self.right_layout.count())):
             self.right_layout.itemAt(i).widget().setParent(None)
         wrapper_widget = QWidget()
-        wrapper_widget.setLayout(coord_grid_layout)
+        wrapper_widget.setLayout(global_frame_of_reference)
         self.right_layout.addWidget(wrapper_widget)
 
         self.current_pos = self.fourth_point.copy()
         self.target_pos = np.mean(self.points, axis=0)
+
+        heart_frame_group = QGroupBox("Heart Frame of Reference")
+        self.heart_frame_layout = QVBoxLayout()
+        heart_frame_coord_grid_layout = QGridLayout()
+        self.point_labels_heart = []
+        heart_frame_group = QGroupBox("Heart Frame of Reference")
+        self.heart_frame_layout = QVBoxLayout()
+        heart_frame_coord_grid_layout = QGridLayout()
+
+        labels = ["Left", "Center", "Right"]
+        self.point_labels_heart = []
+
+        for i in range(3):
+            lbl_name = QLabel(labels[i])
+            lbl_name.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            lbl_colon = QLabel(":")
+            lbl_colon.setAlignment(Qt.AlignCenter)
+            lbl_colon.setFixedWidth(10)
+            colon_font = QFont()
+            colon_font.setBold(True)
+            lbl_colon.setFont(colon_font)
+            lbl_coord = QLabel("(0.000, 0.000, 0.000)")
+            lbl_coord.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            heart_frame_coord_grid_layout.addWidget(lbl_name, i, 0)
+            heart_frame_coord_grid_layout.addWidget(lbl_colon, i, 1)
+            heart_frame_coord_grid_layout.addWidget(lbl_coord, i, 2)
+            self.point_labels_heart.append(lbl_coord)
+
+        # Target position label row
+        target_label = QLabel("Target")
+        target_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        target_colon = QLabel(":")
+        target_colon.setAlignment(Qt.AlignCenter)
+        target_colon.setFixedWidth(10)
+        target_colon.setFont(colon_font)
+        self.target_heart_label = QLabel("(0.000, 0.000, 0.000)")
+        self.target_heart_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        heart_frame_coord_grid_layout.addWidget(target_label, 3, 0)
+        heart_frame_coord_grid_layout.addWidget(target_colon, 3, 1)
+        heart_frame_coord_grid_layout.addWidget(self.target_heart_label, 3, 2)
+
+        heart_frame_widget = QWidget()
+        heart_frame_widget.setLayout(heart_frame_coord_grid_layout)
+        self.heart_frame_layout.addWidget(heart_frame_widget)
+
+        heart_frame_group.setLayout(self.heart_frame_layout)
+        right_panel.addWidget(heart_frame_group)
 
         # === CREATE 3D VISUALIZATION OBJECTS ===
         # Green scatter plot for 3 reference points
@@ -344,11 +400,12 @@ class MainWindow(QWidget):
         self.scatter_red = gl.GLScatterPlotItem(
             pos=np.array([self.current_pos]), size=15, color=(1, 0, 0, 1), pxMode=True)
         self.view.addItem(self.scatter_red)
-        # Blue scatter plot for target position  
+        # Blue scatter plot for target position
         self.scatter_blue = gl.GLScatterPlotItem(
             pos=np.array([self.target_pos]), size=15, color=(0, 0, 1, 1), pxMode=True)
         self.view.addItem(self.scatter_blue)
         # Semi-transparent plane mesh through the 3 reference points
+
         meshdata, normal = compute_plane_mesh(self.points)
         self.plane_mesh = GLMeshItem(
             meshdata=meshdata,
@@ -379,10 +436,26 @@ class MainWindow(QWidget):
         self.status_timer = QTimer(self)
         self.status_timer.timeout.connect(self.update_status_from_shared_memory)
         self.status_timer.start(100)  # status update every 500 ms
-        # Timer to update the 3D visualization 
+        # Timer to update the 3D visualization
         self.redraw_timer = QTimer(self)
         self.redraw_timer.timeout.connect(self.redraw_if_needed)
         self.redraw_timer.start(33)  # ~30 FPS
+
+    def recenter_view(self):
+        if self.points is not None:
+            center_pos = np.mean(self.points, axis=0)
+        else:
+            center_pos = np.array([0, 0, 0])
+
+        # Set the center of view (the point camera looks at)
+        self.view.opts['center'] = QVector3D(center_pos[0], center_pos[1], center_pos[2])
+
+        # Adjust camera distance, azimuth, and elevation as desired (no 'center' kwarg!)
+        self.view.setCameraPosition(
+            distance=5,  # adjust as needed
+            azimuth=270,  # rotation around vertical axis
+            elevation=20  # vertical tilt angle
+        )
 
     def try_connect_shared_memory(self, first=False):
         try:
@@ -399,7 +472,9 @@ class MainWindow(QWidget):
             self.read_shm = None
             self.retry_button.show()
             if not first:
-                QMessageBox.warning(self, "Shared Memory", "Shared memory segment not found. Please ensure C++ process is running and retry.")
+                QMessageBox.warning(self, "Shared Memory",
+                                    "Shared memory segment not found. Please ensure C++ process is running and retry.")
+        print(self.read_shm)
 
     def redraw_if_needed(self):
         if self._data_changed:
@@ -412,7 +487,8 @@ class MainWindow(QWidget):
         if not self.write_shm:
             return
         try:
-            data = struct.pack(MOTOR_STRUCT_FORMAT, self.target_pos[0], self.target_pos[1], self.target_pos[2], True, end_flag)
+            data = struct.pack(MOTOR_STRUCT_FORMAT, self.target_pos[0], self.target_pos[1], self.target_pos[2], True,
+                               end_flag)
             self.write_shm.buf[:MOTOR_STRUCT_SIZE] = data
         except Exception as e:
             print(f"Write error: {e}")
@@ -421,10 +497,77 @@ class MainWindow(QWidget):
         try:
             if self.read_shm:
                 status_data = bytes(self.read_shm.buf[:STATUS_STRUCT_SIZE])
-                current_x, current_y, current_z, status = struct.unpack(STATUS_STRUCT_FORMAT, status_data)
-                print(f"Current X, Y, and Z: ({current_x}, {current_y}, {current_z})")
-                term_pos = status.find(b'\x00')
-                status = status.decode('utf-8') if term_pos == -1 else status[:term_pos].decode('utf-8')
+                unpacked = struct.unpack(STATUS_STRUCT_FORMAT, status_data)
+                points = np.array([
+                    [unpacked[0], unpacked[1], unpacked[2]],  # Left
+                    [unpacked[3], unpacked[4], unpacked[5]],  # Center
+                    [unpacked[6], unpacked[7], unpacked[8]],  # Right
+                    [unpacked[9], unpacked[10], unpacked[11]]  # MP (moving point)
+                ])
+                status_bytes = unpacked[12]
+                term_pos = status_bytes.find(b'\x00')
+                status_str = status_bytes if term_pos == -1 else status_bytes[:term_pos]
+                status = status_str.decode('utf-8')
+
+                print(f"Left X, Y, and Z: ({points[0]})")
+                print(f"Center X, Y, and Z: ({points[1]})")
+                print(f"Right X, Y, and Z: ({points[2]})")
+                print(f"MP X, Y, and Z: ({points[3]})")
+                self.points = points[:3]
+                self.current_pos = points[3]
+
+                # Compute centroid of the 3 bases
+                centroid = np.mean(self.points, axis=0)
+
+                # Define local axes for Heart Frame of Reference
+                y_axis = self.points[1] - centroid
+                y_axis = y_axis / np.linalg.norm(y_axis)
+
+                v = self.points[0] - centroid
+                v_proj = v - np.dot(v, y_axis) * y_axis
+                x_axis = v_proj / np.linalg.norm(v_proj)
+
+                z_axis = np.cross(x_axis, y_axis)
+
+                # Rotation matrix (global to Heart Frame)
+                R = np.column_stack((x_axis, y_axis, z_axis))
+
+                # Translate points by centroid and apply rotation
+                points_centered = self.points - centroid
+                transformed_points = (R.T @ points_centered.T).T  # shape (3,3)
+
+                # Update Heart Frame labels with transformed points
+                for i, p in enumerate(transformed_points):
+                    self.point_labels_heart[i].setText(f"({p[0]:.3f}, {p[1]:.3f}, {p[2]:.3f})")
+                target_centered = self.target_pos - centroid
+                target_transformed = R.T @ target_centered
+
+                self.target_heart_label.setText(
+                    f"({target_transformed[0]:.3f}, {target_transformed[1]:.3f}, {target_transformed[2]:.3f})"
+                )
+                self.target_heart_label.repaint()
+                self.scatter_green.setData(pos=self.points)  # Green points for Left, Center, Right
+                self.scatter_red.setData(pos=np.array([self.current_pos]))
+                self.view.removeItem(self.plane_mesh)
+                meshdata, normal = compute_plane_mesh(self.points)
+                self.plane_mesh = GLMeshItem(
+                    meshdata=meshdata,
+                    smooth=False,
+                    color=(0.5, 0.5, 0.5, 0.25),
+                    drawEdges=True,
+                    edgeColor=(0, 0, 0, 0.8),
+                    glOptions='additive'
+                )
+                self.view.addItem(self.plane_mesh)
+
+                coord_grid_layout = self.right_layout.itemAt(0).widget().layout()
+                for i, p in enumerate(self.points):
+                    lbl_coord = coord_grid_layout.itemAtPosition(i, 2).widget()
+                    lbl_coord.setText(f"({p[0]:.3f}, {p[1]:.3f}, {p[2]:.3f})")
+
+                # Update 3D view
+                self.view.update()
+                print(f"Status: {status}")
 
                 if status == "exit":
                     self.read_shm.close()
@@ -449,6 +592,7 @@ class MainWindow(QWidget):
             self.retry_button.show()
             self.status_value_label.setText("Shared memory closed, please reconnect")
             self.status_value_label.setStyleSheet("color: red;")
+
 
     def closeEvent(self, event):
         if self.read_shm:
@@ -502,46 +646,46 @@ class MainWindow(QWidget):
         """
         if self.points is None or len(self.points) < 3:
             return False
-            
+
         a, b, c = self.points[0], self.points[1], self.points[2]
-        
+
         # Step 1: Project point onto the plane containing triangle ABC
-        
+
         # Find the plane normal vector using cross product of two triangle edges
         ab = b - a  # Vector AB
         ac = c - a  # Vector AC
-        
+
         # Normal vector = AB × AC
         normal = np.cross(ab, ac)
-        
+
         # Normalize the normal vector
         normal_length = np.linalg.norm(normal)
         if normal_length < 0.000001:
             return False  # Degenerate triangle (collinear points)
         normal = normal / normal_length
-        
+
         # Find the projection of point onto the plane
         # Distance from point to plane = (point-A) · normal
         ap = point - a
         distance_to_plane = np.dot(ap, normal)
-        
+
         # Projected point = point - distance * normal
         proj_point = point - distance_to_plane * normal
-        
+
         # Step 2: Calculate areas using the projected point
-        
+
         # Area of original triangle ABC
         area_abc = self.triangle_area(a, b, c)
-        
+
         # Areas of three sub-triangles formed by projected point
         area_pab = self.triangle_area(proj_point, a, b)
         area_pbc = self.triangle_area(proj_point, b, c)
         area_pca = self.triangle_area(proj_point, c, a)
-        
+
         # Step 3: Check if sum of sub-triangle areas equals the original triangle area
         sum_of_sub_areas = area_pab + area_pbc + area_pca
         area_difference = abs(sum_of_sub_areas - area_abc)
-        
+
         # Point is inside triangle if the areas match within tolerance
         return area_difference <= 0.000001
 
@@ -558,7 +702,7 @@ class MainWindow(QWidget):
         # Vector from p1 to p2 and p1 to p3
         v1 = p2 - p1
         v2 = p3 - p1
-        
+
         # Cross product gives area vector, magnitude is 2 * area
         cross_product = np.cross(v1, v2)
         return 0.5 * np.linalg.norm(cross_product)
@@ -573,8 +717,8 @@ class MainWindow(QWidget):
             # Validate position before moving
             if not self.validate_position(self.target_pos):
                 QMessageBox.warning(
-                    self, 
-                    "Invalid Position", 
+                    self,
+                    "Invalid Position",
                     "Moving platform is outside the triangle formed by L, C, and R.\n"
                     "Please choose a position within the bounds."
                 )
@@ -588,36 +732,6 @@ class MainWindow(QWidget):
     def end_system(self):
         self.write_to_cpp(end_flag=True)
         self.close()
-
-    def line_edit_changed(self, axis, widget):
-        """
-        Handle changes to coordinate input fields.
-        
-        Called when user finishes editing a coordinate input field (X, Y, or Z).
-        Validates the input, updates the target position, and refreshes the visualization.
-        Shows error dialog for invalid input and reverts to previous value.
-        
-        Args:
-            axis (str): Which axis was changed ('X', 'Y', or 'Z')
-            widget (QLineEdit): The input field widget that was modified
-            
-        Side effects:
-            - Updates target_pos coordinate for specified axis
-            - Moves blue target point in 3D view
-            - Updates display labels
-            - Shows error dialog for invalid input
-            - Reverts input field on error
-        """
-        try:
-            val = float(widget.text())
-        except ValueError:
-            QMessageBox.warning(self, "Invalid Input", f"Please enter a valid number for {axis}")
-            self.update_inputs_from_target()
-            return
-        idx = {'X': 0, 'Y': 1, 'Z': 2}[axis]
-        self.target_pos[idx] = val
-        self._data_changed = True
-        self.update_labels()
 
     def update_inputs_from_target(self):
         """
@@ -719,6 +833,7 @@ class MainWindow(QWidget):
             self.current_pos_labels['X'].setText("N/A")
             self.current_pos_labels['Y'].setText("N/A")
             self.current_pos_labels['Z'].setText("N/A")
+
 
 if __name__ == "__main__":
     """
