@@ -126,14 +126,15 @@ bool Motor::setMotorDestination(dynamixel::GroupSyncWrite *groupSyncWrite, doubl
 }
 
 uint32_t Motor::checkAndGetPresentPosition(dynamixel::GroupSyncRead *groupSyncRead) {
+    groupSyncRead->clearParam();
     groupSyncRead->addParam(this->getMotorID());
 
     int dxl_comm_result = groupSyncRead->txRxPacket();
     uint8_t dxl_error = 0;
     if (dxl_comm_result != COMM_SUCCESS) {
-        spdlog::debug("dxl_comm_result: {}", dxl_comm_result);
+        spdlog::error("dxl_comm_result: {}", dxl_comm_result);
         if (groupSyncRead->getError(this->getMotorID(), &dxl_error)) {
-            spdlog::debug("dxl_error: {}", dxl_error);
+            spdlog::error("dxl_error: {}", dxl_error);
             // spdlog::error("[ID:{:3d}] {}\n", this->getMotorID(),
             //               packetHandler->getRxPacketError(dxl_error));
         }
@@ -143,12 +144,12 @@ uint32_t Motor::checkAndGetPresentPosition(dynamixel::GroupSyncRead *groupSyncRe
 
     if (groupSyncRead->
         isAvailable(this->getMotorID(), ADDR_PRESENT_POSITION, LEN_PRESENT_POSITION) != true) {
-        spdlog::debug("[ID:{:3d}] groupSyncRead getdata failed", this->getMotorID());
+        spdlog::error("[ID:{:3d}] groupSyncRead getdata failed", this->getMotorID());
         return EXIT_FAILURE;
     }
     this->motor.DXL_PRESENT_POSITION_VALUE = groupSyncRead->getData(this->getMotorID(), ADDR_PRESENT_POSITION,
                                                                     LEN_PRESENT_POSITION);
-    // groupSyncRead->clearParam();
+    groupSyncRead->clearParam();
     return this->motor.DXL_PRESENT_POSITION_VALUE;
 }
 
