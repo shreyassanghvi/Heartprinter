@@ -242,10 +242,10 @@ bool SystemController::initializeMotors() {
             
             // Initialize each motor (logic from initMotors function in Init.cpp)
             // Set motor operation mode to extended position control
-            if (motors.back().setVelocityProfile(packetHandler, portHandler, DXL_VELOCITY_PROFILE_VALUE) != 0) {
-                spdlog::error("Failed to set velocity profile for motor {}", i);
-                return false;
-            }
+            // if (motors.back().setVelocityProfile(packetHandler, portHandler, DXL_VELOCITY_PROFILE_VALUE) != 0) {
+            //     spdlog::error("Failed to set velocity profile for motor {}", i);
+            //     return false;
+            // }
 
 
             if (motors.back().setMotorOperationMode(packetHandler, portHandler, EXTENDED_POSITION_CONTROL_MODE) != EXTENDED_POSITION_CONTROL_MODE) {
@@ -766,18 +766,35 @@ void SystemController::calculateMotorPositionsFromCommand(const MotorCommand& cm
     // Convert mm to Dynamixel units using motor's conversion function
     if (!motors.empty()) {
         for (int i = 0; i < MOTOR_CNT; i++) {
+            double curr_x = currentPosition.x - staticBasePositions[i].x;
+            double curr_y = currentPosition.y - staticBasePositions[i].y;
+            double curr_z = currentPosition.z - staticBasePositions[i].z;
+            double curr_cable_length = sqrt(pow(curr_x, 2) + pow(curr_y, 2) + pow(curr_z, 2));
+            int curr_step_count = motors[i].mmToDynamixelUnits(curr_cable_length);
+            spdlog::info("SHM: Base {}. Current cable length/step count: {}/{}", i, curr_cable_length, curr_step_count);
+
             double dx = cmd.target_x - staticBasePositions[i].x;
             double dy = cmd.target_y - staticBasePositions[i].y;
             double dz = cmd.target_z - staticBasePositions[i].z;
-
             double desired_cable_length = sqrt(pow(dx, 2) + pow(dy, 2) + pow(dz, 2));
-
             int desired_step_count = motors[i].mmToDynamixelUnits(desired_cable_length);
-            int curr_step_count = motors[i].checkAndGetPresentPosition(&groupSyncRead);
+            spdlog::info("SHM: Desired cable length/step count: {}/{}", desired_cable_length, desired_step_count);
 
-            int delta_step_count = curr_step_count - desired_step_count;
-            spdlog::info("SHM: Desired step count: {}; Current step count: {}; Delta step count: {}", desired_step_count, curr_step_count, delta_step_count);
-            motorDestinations[i] = curr_step_count + (curr_step_count - desired_step_count);
+            int actual_curr_step_count = motors[i].checkAndGetPresentPosition(&groupSyncRead);
+            spdlog::info("SHM: Actual motor step count: {}", actual_curr_step_count);
+
+            // Assume:
+            // Actual step count = 0, 0, 0
+            // Actual position = 1, 1, 1
+            // Desired position = 0, 0, 0
+            // We would expect:
+            // Desired step count = -1, -1, -1 (to go from 1, 1, 1 to 0, 0, 0)
+
+            // Actual position = 0, 0, 0
+            // Desired position = 1, 1, 1
+            // Expect:
+            // Desired step count = 1, 1, 1 ( to go from 0, 0, 0 to 1, 1, 1)
+            motorDestinations[i] = actual_curr_step_count + (desired_step_count - curr_step_count);
         }
 
         spdlog::info("SHM: Target ({:.2f}, {:.2f}, {:.2f}) -> Dest: [{:4d}, {:4d}, {:4d}]",
