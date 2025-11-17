@@ -805,12 +805,24 @@ void SystemController::calculateMotorPositionsFromCommand(const MotorCommand& cm
 
 void SystemController::setMotorDestinationsForTarget(DOUBLE_POSITION_ANGLES_RECORD& targetPos) {
     for (int i = 0; i < MOTOR_CNT; i++) {
+        double curr_x = currentPosition.x - staticBasePositions[i].x;
+        double curr_y = currentPosition.y - staticBasePositions[i].y;
+        double curr_z = currentPosition.z - staticBasePositions[i].z;
+        double curr_cable_length = sqrt(pow(curr_x, 2) + pow(curr_y, 2) + pow(curr_z, 2));
+        int curr_step_count = motors[i].mmToDynamixelUnits(curr_cable_length);
+        spdlog::info("Base {}. Current cable length/step count: {}/{}", i, curr_cable_length, curr_step_count);
+
         double dx = targetPos.x - staticBasePositions[i].x;
         double dy = targetPos.y - staticBasePositions[i].y;
         double dz = targetPos.z - staticBasePositions[i].z;
+        double desired_cable_length = sqrt(pow(dx, 2) + pow(dy, 2) + pow(dz, 2));
+        int desired_step_count = motors[i].mmToDynamixelUnits(desired_cable_length);
+        spdlog::info("Desired cable length/step count: {}/{}", desired_cable_length, desired_step_count);
 
-        double cable_length = sqrt(pow(dx, 2) + pow(dy, 2) + pow(dz, 2));
-        motorDestinations[i] = motors[i].mmToDynamixelUnits(cable_length);
+        int actual_curr_step_count = motors[i].checkAndGetPresentPosition(&groupSyncRead);
+        spdlog::info("Actual motor step count: {}", actual_curr_step_count);
+
+        motorDestinations[i] = actual_curr_step_count + (desired_step_count - curr_step_count);
     }
 }
 
