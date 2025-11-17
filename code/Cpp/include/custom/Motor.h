@@ -28,7 +28,7 @@
 
 #define ADDR_VELOCITY_PROFILE        112
 #define LEN_PROFILE_VELOCITY         4
-#define DXL_VELOCITY_PROFILE_VALUE   22  // ~5 RPM (unit: 0.229 rpm)
+#define DXL_VELOCITY_PROFILE_VALUE   10  // ~5 RPM (unit: 0.229 rpm)
 
 struct DynamixelMotor {
     int DXL_ID;
