@@ -54,25 +54,31 @@ bool runPreInitializationChecklist() {
         spdlog::error("Pre-check failed: System power not confirmed. Please restart from the beginning.");
         return false;
     }
-    spdlog::info("Check 1/4 passed: System power confirmed");
+    spdlog::info("Check passed: System power confirmed");
 
     if (!getUserConfirmation("2. Is the ESTOP off?")) {
         spdlog::error("Pre-check failed: ESTOP status not confirmed. Please restart from the beginning.");
         return false;
     }
-    spdlog::info("Check 2/4 passed: ESTOP confirmed off");
+    spdlog::info("Check passed: ESTOP confirmed off");
 
     if (!getUserConfirmation("3. Is the TrackStar beacon next to the patient?")) {
         spdlog::error("Pre-check failed: TrackStar beacon placement not confirmed. Please restart from the beginning.");
         return false;
     }
-    spdlog::info("Check 3/4 passed: TrackStar beacon placement confirmed");
+    spdlog::info("Check passed: TrackStar beacon placement confirmed");
 
     if (!getUserConfirmation("4. Are the Loadcell power switches set to on?")) {
         spdlog::error("Pre-check failed: Loadcell power not confirmed. Please restart from the beginning.");
         return false;
     }
-    spdlog::info("Check 4/4 passed: Loadcell power confirmed");
+    spdlog::info("Check passed: Loadcell power confirmed");
+
+    if (!getUserConfirmation("5. Did you power cycle the motors?")) {
+        spdlog::error("Pre-check failed: Motor power cycle not confirmed. Please restart from the beginning.");
+        return false;
+    }
+    spdlog::info("Check passed: Motor power cycle confirmed");
 
     std::cout << "All pre-checks passed! Proceeding..." << std::endl;
 
