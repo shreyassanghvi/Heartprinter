@@ -145,8 +145,8 @@ int main(int argc, char *argv[]) {
         config.recordCount = 1000;
         config.enableSafetyChecks = true;
         config.maxLoadVoltage = -0.01;
-        config.minLoadVoltage = -0.1;
-        config.tensionAdjustmentSteps = 100;
+        config.minLoadVoltage = -0.075;
+        config.tensionAdjustmentSteps = 10;
         config.trackingDeadband = 300.0;
 
         // Run pre-initialization checklist
