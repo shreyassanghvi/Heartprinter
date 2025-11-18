@@ -242,12 +242,6 @@ bool SystemController::initializeMotors() {
             
             // Initialize each motor (logic from initMotors function in Init.cpp)
             // Set motor operation mode to extended position control
-            if (motors.back().setVelocityProfile(packetHandler, portHandler, DXL_VELOCITY_PROFILE_VALUE) != 0) {
-                spdlog::error("Failed to set velocity profile for motor {}", i);
-                return false;
-            }
-
-
             if (motors.back().setMotorOperationMode(packetHandler, portHandler, EXTENDED_POSITION_CONTROL_MODE) != EXTENDED_POSITION_CONTROL_MODE) {
                 spdlog::error("Failed to set operation mode for motor {}", i);
                 return false;
@@ -256,6 +250,12 @@ bool SystemController::initializeMotors() {
             // Enable motor torque
             if (motors.back().enableTorque(packetHandler, portHandler) != 0) {
                 spdlog::error("Failed to enable torque for motor {}", i);
+                return false;
+            }
+
+            // Set the velocity profile
+            if (motors.back().setVelocityProfile(packetHandler, portHandler, DXL_VELOCITY_PROFILE_VALUE) != 0) {
+                spdlog::error("Failed to set velocity profile for motor {}", i);
                 return false;
             }
         }
@@ -445,6 +445,17 @@ States SystemController::processStateTransition(States current) {
             // Actually set the current position of the moving base.
             GetAsynchronousRecord(3, &currentPosition, sizeof(currentPosition));
 
+            while (!g_systemControllerInstance->daqDataAvailable) {
+                spdlog::info("Waiting for daq values to become avaiable");
+            }
+
+            while (!performSafetyCheck(currentPosition)) {
+                if (!adjustTensionBasedOnLoadCells()) {
+                    spdlog::error("Failed to adjust tension - entering error state");
+                    return States::ERR;
+                }
+            }
+
             // Calculate centroid of the three base positions
             calculateCentroid();
 
@@ -499,7 +510,9 @@ States SystemController::processStateTransition(States current) {
                 double dy = currentPosition.y - desiredPosition.y;
                 double dz = currentPosition.z - desiredPosition.z;
                 double curr_cable_length = sqrt(pow(dx, 2) + pow(dy, 2) + pow(dz, 2));
-                if (curr_cable_length > 0.5) {
+                spdlog::info("Desired position: ({}, {}, {})", desiredPosition.x, desiredPosition.y, desiredPosition.z);
+                spdlog::info("Current error between desired and current: {}", curr_cable_length);
+                if (curr_cable_length > 1.5) {
                     setMotorDestinationsForTarget(desiredPosition);
                     if (!moveMotorPositions()) {
                         spdlog::error("Failed to move motors");
