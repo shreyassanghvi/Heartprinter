@@ -242,10 +242,10 @@ bool SystemController::initializeMotors() {
             
             // Initialize each motor (logic from initMotors function in Init.cpp)
             // Set motor operation mode to extended position control
-            // if (motors.back().setVelocityProfile(packetHandler, portHandler, DXL_VELOCITY_PROFILE_VALUE) != 0) {
-            //     spdlog::error("Failed to set velocity profile for motor {}", i);
-            //     return false;
-            // }
+            if (motors.back().setVelocityProfile(packetHandler, portHandler, DXL_VELOCITY_PROFILE_VALUE) != 0) {
+                spdlog::error("Failed to set velocity profile for motor {}", i);
+                return false;
+            }
 
 
             if (motors.back().setMotorOperationMode(packetHandler, portHandler, EXTENDED_POSITION_CONTROL_MODE) != EXTENDED_POSITION_CONTROL_MODE) {
@@ -357,7 +357,7 @@ void SystemController::run() {
                 //  It doesn't actually respect the sensor ID that you pass through.
                 //  validateProbe does actually set the staticBasePositions for bases with connected sensors.
                 validateProbes();
-                currentPosition = readATI(3); // Read from first sensor directly
+                GetAsynchronousRecord(3, &currentPosition, sizeof(currentPosition));
 
                 dataCount++;
 
@@ -442,13 +442,17 @@ States SystemController::processStateTransition(States current) {
                 }
             }
 
+            // Actually set the current position of the moving base.
+            GetAsynchronousRecord(3, &currentPosition, sizeof(currentPosition));
+
             // Calculate centroid of the three base positions
             calculateCentroid();
 
             // Move to centroid position
             spdlog::info("Moving to centroid position...");
 
-            setMotorDestinationsForTarget(centroidPosition);
+            desiredPosition = centroidPosition;
+            setMotorDestinationsForTarget(desiredPosition);
             spdlog::info("Motor Destinations: {}, {}, {}", motorDestinations[0], motorDestinations[1], motorDestinations[2]);
 
             sharedMemory->writeStatusUpdate(currentPosition, staticBasePositions, currentStateToString());
@@ -487,6 +491,27 @@ States SystemController::processStateTransition(States current) {
             // Check if motors have reached their targets
             if (readMotorPositions()) {
                 spdlog::debug("Motors reached target positions");
+                // We need to check to see whether the trackstar current position actually matches that of the desired position
+
+                GetAsynchronousRecord(3, &currentPosition, sizeof(currentPosition));
+
+                double dx = currentPosition.x - desiredPosition.x;
+                double dy = currentPosition.y - desiredPosition.y;
+                double dz = currentPosition.z - desiredPosition.z;
+                double curr_cable_length = sqrt(pow(dx, 2) + pow(dy, 2) + pow(dz, 2));
+                if (curr_cable_length > 0.5) {
+                    setMotorDestinationsForTarget(desiredPosition);
+                    if (!moveMotorPositions()) {
+                        spdlog::error("Failed to move motors");
+                        handleError(SystemException(SystemError::MOTOR_INIT_FAILED, "Motor movement failed"));
+                        break;
+                    }
+                }
+
+                // if (checkMovingBasePosition()) {
+                    // If false, then we have new motor positions to reach.
+                    // Send new motor commands
+                // }
                 return States::RUNNING;
             }
 
@@ -750,6 +775,9 @@ bool SystemController::readSharedMemoryCommand(MotorCommand& cmd) {
     // Clear the execute flag and write back to shared memory
     MotorCommand clearedCmd = cmd;
     clearedCmd.execute = false;
+    desiredPosition.x = cmd.target_x;
+    desiredPosition.y = cmd.target_y;
+    desiredPosition.z = cmd.target_z;
     sharedMemory->writeMotorCommand(clearedCmd);
 
     return true;
@@ -788,13 +816,13 @@ void SystemController::calculateMotorPositionsFromCommand(const MotorCommand& cm
             // Actual position = 1, 1, 1
             // Desired position = 0, 0, 0
             // We would expect:
-            // Desired step count = -1, -1, -1 (to go from 1, 1, 1 to 0, 0, 0)
+            // Desired step count = 1, 1, 1 (to go from 1, 1, 1 to 0, 0, 0)
 
             // Actual position = 0, 0, 0
             // Desired position = 1, 1, 1
             // Expect:
-            // Desired step count = 1, 1, 1 ( to go from 0, 0, 0 to 1, 1, 1)
-            motorDestinations[i] = actual_curr_step_count + (desired_step_count - curr_step_count);
+            // Desired step count = -1, -1, -1 ( to go from 0, 0, 0 to 1, 1, 1)
+            motorDestinations[i] = actual_curr_step_count + (curr_step_count - desired_step_count);
         }
 
         spdlog::info("SHM: Target ({:.2f}, {:.2f}, {:.2f}) -> Dest: [{:4d}, {:4d}, {:4d}]",
@@ -822,7 +850,7 @@ void SystemController::setMotorDestinationsForTarget(DOUBLE_POSITION_ANGLES_RECO
         int actual_curr_step_count = motors[i].checkAndGetPresentPosition(&groupSyncRead);
         spdlog::info("Actual motor step count: {}", actual_curr_step_count);
 
-        motorDestinations[i] = actual_curr_step_count + (desired_step_count - curr_step_count);
+        motorDestinations[i] = actual_curr_step_count + (curr_step_count - desired_step_count);
     }
 }
 
@@ -969,7 +997,7 @@ bool SystemController::adjustTensionBasedOnLoadCells() {
         if (channelAverages[i] < config.minLoadVoltage) {
             // Relieve tension by moving motor to decrease cable tension
             adjustment = -config.tensionAdjustmentSteps;
-            spdlog::info("Motor {} overload ({:.3f}V > {:.3f}V) - relieving tension by {} steps",
+            spdlog::info("Motor {} overload ({:.3f}V < {:.3f}V) - relieving tension by {} steps",
                        i, channelAverages[i], config.maxLoadVoltage, -adjustment);
         }
         // Check if load is too low (potential sensor issue or slack cable)
@@ -977,7 +1005,7 @@ bool SystemController::adjustTensionBasedOnLoadCells() {
         else if (channelAverages[i] > config.maxLoadVoltage) {
             // Increase tension by moving motor to tighten cable
             adjustment = config.tensionAdjustmentSteps;
-            spdlog::info("Motor {} underload ({:.3f}V < {:.3f}V) - increasing tension by {} steps",
+            spdlog::info("Motor {} underload ({:.3f}V > {:.3f}V) - increasing tension by {} steps",
                        i, channelAverages[i], config.minLoadVoltage, adjustment);
         }
 
