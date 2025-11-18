@@ -203,7 +203,7 @@ int Motor::setVelocityProfile(dynamixel::PacketHandler *packetHandler, dynamixel
     } else if (dxl_error != 0) {
         spdlog::error("{}", packetHandler->getRxPacketError(dxl_error));
     } else {
-        spdlog::info("Dynamixel#{} Velocity limit set to {} units ({:.2f} RPM)",
+        spdlog::info("Dynamixel#{} Velocity profile set to {} units ({:.2f} RPM)",
                      this->getMotorID(), velocityProfile, velocityProfile * 0.229);
     }
     return dxl_error;
