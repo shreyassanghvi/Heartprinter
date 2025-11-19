@@ -206,7 +206,7 @@ class MainWindow(QWidget):
         group.setLayout(layout)
         layout.addLayout(grid)
 
-        labels = ["Left", "Center", "Right"]
+        labels = ["Left", "Center", "Right", "Current"]
         self.point_labels_global = []
 
         for i, label_text in enumerate(labels):
@@ -474,7 +474,8 @@ class MainWindow(QWidget):
                 for i, p in enumerate(self.points):
                     lbl_coord = coord_grid_layout.itemAtPosition(i, 2).widget()
                     lbl_coord.setText(f"({p[0]:.3f}, {p[1]:.3f}, {p[2]:.3f})")
-
+                lbl_coord = coord_grid_layout.itemAtPosition(3, 2).widget()
+                lbl_coord.setText(f"({self.current_pos[0]:.3f}, {self.current_pos[1]:.3f}, {self.current_pos[2]:.3f})")
                 self.view.update()
 
                 if status == "exit":
@@ -613,7 +614,7 @@ class MainWindow(QWidget):
 
     def end_system(self):
         self.write_to_cpp(end_flag=True)
-        self.close()
+
 
     def keyPressEvent(self, event):
         key = event.key()
