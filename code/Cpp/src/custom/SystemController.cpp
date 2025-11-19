@@ -353,9 +353,6 @@ void SystemController::run() {
             
             // Read tracking data
             try {
-                // TODO: We need to refactor this, right now readATI returns the last connected sensor
-                //  It doesn't actually respect the sensor ID that you pass through.
-                //  validateProbe does actually set the staticBasePositions for bases with connected sensors.
                 validateProbes();
                 GetAsynchronousRecord(3, &currentPosition, sizeof(currentPosition));
 
@@ -388,9 +385,6 @@ void SystemController::run() {
                 // If the commandProcessed exists, then let's set motorpositions based on that
                 if (commandAvailable) {
                     calculateMotorPositionsFromCommand(sharedCmd);
-                } else {
-                    // Otherwise, let's set motorpositions based on the tracking function
-                    // calculateMotorPositionsFromTracking();
                 }
 
                 // Send new motor commands
@@ -429,14 +423,12 @@ States SystemController::processStateTransition(States current) {
 
         case States::CALIBRATION:
             // Check if all 4 probes are returning values
-            if (!validateProbes())
-            {
+            if (!validateProbes()) {
                 spdlog::error("Missing probe detected, going into calibration routine");
 
                 // If calibration is not yet complete, perform it
                 spdlog::info("Starting calibration routine...");
-                if (!performCalibration())
-                {
+                if (!performCalibration()) {
                     spdlog::error("Calibration routine failed");
                     return States::ERR;
                 }
@@ -444,9 +436,10 @@ States SystemController::processStateTransition(States current) {
 
             // Actually set the current position of the moving base.
             GetAsynchronousRecord(3, &currentPosition, sizeof(currentPosition));
+            sharedMemory->writeStatusUpdate(currentPosition, staticBasePositions, currentStateToString());
 
             while (!g_systemControllerInstance->daqDataAvailable) {
-                spdlog::info("Waiting for daq values to become avaiable");
+                spdlog::info("Waiting for DAQ values to become available");
             }
 
             while (!performSafetyCheck(currentPosition)) {
@@ -458,16 +451,13 @@ States SystemController::processStateTransition(States current) {
 
             // Calculate centroid of the three base positions
             calculateCentroid();
+            desiredPosition = centroidPosition;
 
             // Move to centroid position
-            spdlog::info("Moving to centroid position...");
-
-            desiredPosition = centroidPosition;
             setMotorDestinationsForTarget(desiredPosition);
             spdlog::info("Motor Destinations: {}, {}, {}", motorDestinations[0], motorDestinations[1], motorDestinations[2]);
 
-            sharedMemory->writeStatusUpdate(currentPosition, staticBasePositions, currentStateToString());
-
+            spdlog::info("Moving to centroid position...");
             if (!moveMotorPositions()) {
                 spdlog::info("Failed to move motors.");
                 return States::ERR;
@@ -506,35 +496,59 @@ States SystemController::processStateTransition(States current) {
 
                 GetAsynchronousRecord(3, &currentPosition, sizeof(currentPosition));
 
+                // Calculate vector from current to desired position
                 double dx = currentPosition.x - desiredPosition.x;
                 double dy = currentPosition.y - desiredPosition.y;
                 double dz = currentPosition.z - desiredPosition.z;
-                double curr_cable_length = sqrt(pow(dx, 2) + pow(dy, 2) + pow(dz, 2));
                 spdlog::info("Desired position: ({}, {}, {})", desiredPosition.x, desiredPosition.y, desiredPosition.z);
-                spdlog::info("Current error between desired and current: {}", curr_cable_length);
-                if (curr_cable_length > 1.5) {
+
+                double posError = sqrt(pow(dx, 2) + pow(dy, 2) + pow(dz, 2));
+                spdlog::info("Vector magnitude: {:.3f}", posError);
+
+                // If we're somehow very close to the desiredPosition (probably when we're near the bases) go to RUNNING
+                if (posError < 1.5) {
+                    return States::RUNNING;
+                }
+
+                // Calculate plane
+                double a1 = staticBasePositions[1].x - staticBasePositions[0].x;
+                double b1 = staticBasePositions[1].y - staticBasePositions[0].y;
+                double c1 = staticBasePositions[1].z - staticBasePositions[0].z;
+                double a2 = staticBasePositions[2].x - staticBasePositions[0].x;
+                double b2 = staticBasePositions[2].y - staticBasePositions[0].y;
+                double c2 = staticBasePositions[2].z - staticBasePositions[0].z;
+
+                double a = b1 * c2 - b2 * c1;
+                double b = a2 * c1 - a1 * c2;
+                double c = a1 * b2 - b1 * a2;
+                double normalMagnitude = sqrt(pow(a, 2) + pow(b, 2) + pow(c, 2));
+
+                // Calculate angle between vector and plane normal
+                // If vector is perpendicular to plane, it should be parallel to normal (angle near 0 or 180)
+                double dotProduct = dx*a + dy*b + dz*c;
+                double cosAngle = std::max(-1.0, std::min(1.0, dotProduct / (posError * normalMagnitude)));
+
+                // angleToNormal is angle between vector and normal
+                double angleToNormal = acos(std::abs(cosAngle)) * 180.0 / M_PI;
+
+                // We want vector perpendicular to plane (parallel to normal), so angleToNormal should be near 0
+                // TODO: Make this configurable
+                const double angleThreshold = 5.0;
+
+                spdlog::info("Angle to plane normal: {:.1f} deg", angleToNormal);
+                if (angleToNormal > angleThreshold) {
+                    spdlog::warn("Position vector not perpendicular to base plane (angle: {:.1f} deg > {:.1f} deg threshold)",
+                                angleToNormal, angleThreshold);
                     setMotorDestinationsForTarget(desiredPosition);
                     if (!moveMotorPositions()) {
                         spdlog::error("Failed to move motors");
                         handleError(SystemException(SystemError::MOTOR_INIT_FAILED, "Motor movement failed"));
                         break;
                     }
+                    return States::MOVING;
                 }
-
-                // if (checkMovingBasePosition()) {
-                    // If false, then we have new motor positions to reach.
-                    // Send new motor commands
-                // }
                 return States::RUNNING;
             }
-
-            // Check for safety conditions while moving
-            // if (!performSafetyCheck(currentPosition)) {
-            //     spdlog::warn("Safety check failed - tension outside of normal bounds.");
-            //     // TODO: Adjust the motor positions? We need to relieve or increase tension.
-            //     //  Should this be a different function? executeTensionAdjustment?
-            // }
-
             return States::MOVING;
 
         case States::ERR:
@@ -725,30 +739,6 @@ void SystemController::handleError(const SystemException& e) {
                  static_cast<int>(e.getErrorCode()), e.what());
 }
 
-// Get system status
-SystemStatus SystemController::getSystemStatus() const {
-    SystemStatus status;
-    status.currentState = currentState;
-    status.currentPosition = currentPosition;
-    status.motorsEnabled = !motors.empty(); // Simplified check
-    status.trackingActive = (tracker != nullptr);
-    status.daqActive = (daqSystem && daqSystem->initialized);
-    status.lastError = lastErrorMessage;
-    
-    return status;
-}
-
-// Set configuration
-void SystemController::setConfiguration(const SystemConfig& newConfig) {
-    if (initialized) {
-        spdlog::warn("Cannot change configuration while system is initialized");
-        return;
-    }
-    
-    config = newConfig;
-    spdlog::info("Configuration updated");
-}
-
 
 // Convert current state to string
 std::string SystemController::currentStateToString() const {
@@ -867,53 +857,6 @@ void SystemController::setMotorDestinationsForTarget(DOUBLE_POSITION_ANGLES_RECO
     }
 }
 
-// Calculate motor positions from tracking data
-void SystemController::calculateMotorPositionsFromTracking() {
-    double dx = currentPosition.x;
-    double dy = currentPosition.y;
-    double dz = currentPosition.z;
-
-    // X axis (motor 0): normal logic
-    if (dx > config.trackingDeadband) {
-        motorDestinations[0] = maxPos;
-        setLEDState(static_cast<int>(LED::LEFT_BASE), true);
-    } else if (dx < -config.trackingDeadband) {
-        motorDestinations[0] = minPos;
-        setLEDState(static_cast<int>(LED::LEFT_BASE), true);
-    } else {
-        motorDestinations[0] = neutralPos;
-        setLEDState(static_cast<int>(LED::LEFT_BASE), false);
-    }
-
-    // Y axis (motor 1): inverted logic
-    if (dy > config.trackingDeadband) {
-        motorDestinations[1] = minPos;  // inverted
-        setLEDState(static_cast<int>(LED::CENTER_BASE), true);
-    } else if (dy < -config.trackingDeadband) {
-        motorDestinations[1] = maxPos;  // inverted
-        setLEDState(static_cast<int>(LED::CENTER_BASE), true);
-    } else {
-        motorDestinations[1] = neutralPos;
-        setLEDState(static_cast<int>(LED::CENTER_BASE), false);
-    }
-
-    // Z axis (motor 2): normal logic
-    if (dz > config.trackingDeadband) {
-        motorDestinations[2] = maxPos;
-        setLEDState(static_cast<int>(LED::RIGHT_BASE), true);
-    } else if (dz < -config.trackingDeadband) {
-        motorDestinations[2] = minPos;
-        setLEDState(static_cast<int>(LED::RIGHT_BASE), true);
-    } else {
-        motorDestinations[2] = neutralPos;
-        setLEDState(static_cast<int>(LED::RIGHT_BASE), false);
-    }
-
-    spdlog::info("dx: {:4.2f}, dy: {:4.2f}, dz: {:4.2f} | Dest: [{:4d}, {:4d}, {:4d}]",
-               dx, dy, dz,
-               motorDestinations[0], motorDestinations[1], motorDestinations[2]);
-}
-
 // Move motors to target positions
 bool SystemController::moveMotorPositions() {
     if (motors.empty()) {
@@ -951,25 +894,9 @@ bool SystemController::readMotorPositions() {
     if (motors.empty()) {
         return false;
     }
-    int dxl_comm_result = 0;
-    uint8_t dxl_error = 0;
+
     try {
         groupSyncRead.clearParam();
-        // for (int i = 0; i < MOTOR_CNT; i++) {
-        //     groupSyncRead.addParam(motors[i].getMotorID());
-        // }
-        // dxl_comm_result = groupSyncRead.txRxPacket();
-        // if (dxl_comm_result != COMM_SUCCESS) {
-        //     spdlog::error("{}", packetHandler->getTxRxResult(dxl_comm_result));
-        //     for (int i = 0; i < MOTOR_CNT; i++) {
-        //         if (groupSyncRead.getError(motors[i].getMotorID(), &dxl_error)) {
-        //             spdlog::error("[ID:{:3d}] {}\n", motors[i].getMotorID(),
-        //                 packetHandler->getRxPacketError(dxl_error));
-        //         }
-        //     }
-        //     return false;
-        // }
-
         bool allReached = true;
         
         for (int j = 0; j < MOTOR_CNT && j < static_cast<int>(motors.size()); j++) {
@@ -981,9 +908,8 @@ bool SystemController::readMotorPositions() {
             spdlog::debug("Motor {}: Current: {}, Target: {}, Diff: {}", 
                          j, motor_j_current_pos, motorDestinations[j], std::abs(static_cast<int>(motor_j_current_pos) - motorDestinations[j]));
         }
-        
+
         return allReached;
-        
     } catch (const std::exception& e) {
         spdlog::error("Exception during motor position reading: {}", e.what());
         return false;
@@ -1000,39 +926,42 @@ bool SystemController::adjustTensionBasedOnLoadCells() {
 
     bool adjustmentMade = false;
 
-    for (int i = 0; i < 3; i++) {
-        int adjustment = 0;
-        int motor_i_current_pos = motors[i].checkAndGetPresentPosition(&groupSyncRead);
+    // Do full adjustment at 0.075V error
+    const double Kp = config.tensionAdjustmentSteps / 0.075;
+    const int minAdjustment = 10;
+    const int maxAdjustment = config.tensionAdjustmentSteps * 3;
+    const double midVoltage = (config.minLoadVoltage + config.maxLoadVoltage) / 2;
 
+    for (int i = 0; i < 3; i++) {
+        double error = std::abs(midVoltage - channelAverages[i]);
+        int adjustment = std::max(minAdjustment, std::min(static_cast<int>(Kp * error), maxAdjustment));
         // This logic is a bit confusing because larger negative values are larger loads.
         // Check if load is too high (overload)
         // Too high means that it is lower than our minimum voltage
         if (channelAverages[i] < config.minLoadVoltage) {
-            // Relieve tension by moving motor to decrease cable tension
-            adjustment = -config.tensionAdjustmentSteps;
-            spdlog::info("Motor {} overload ({:.3f}V < {:.3f}V) - relieving tension by {} steps",
-                       i, channelAverages[i], config.maxLoadVoltage, -adjustment);
+            // Relieve tension by moving motor to decrease cable tension (negative direction)
+            adjustment = -adjustment;
+            spdlog::info("Motor {} overload ({:.3f}V < {:.3f}V, error={:.3f}V) - relieving tension by {} steps (P-term)",
+                       i, channelAverages[i], config.minLoadVoltage, error, -adjustment);
         }
         // Check if load is too low (potential sensor issue or slack cable)
         // Too low means that it is higher than our max voltage
         else if (channelAverages[i] > config.maxLoadVoltage) {
-            // Increase tension by moving motor to tighten cable
-            adjustment = config.tensionAdjustmentSteps;
-            spdlog::info("Motor {} underload ({:.3f}V > {:.3f}V) - increasing tension by {} steps",
-                       i, channelAverages[i], config.minLoadVoltage, adjustment);
+            spdlog::info("Motor {} underload ({:.3f}V > {:.3f}V, error={:.3f}V) - increasing tension by {} steps (P-term)",
+                       i, channelAverages[i], config.maxLoadVoltage, error, adjustment);
+        }
+        else {
+            adjustment = 0;
         }
 
         // Apply adjustment if needed
         if (adjustment != 0) {
-            int finalAdjustment = adjustment;
-
-            int newDestination = motor_i_current_pos + finalAdjustment;
-
-            motorDestinations[i] = newDestination;
+            int motor_i_current_pos = motors[i].checkAndGetPresentPosition(&groupSyncRead);
+            motorDestinations[i] = motor_i_current_pos + adjustment;
             adjustmentMade = true;
 
-            spdlog::info("Motor {} adjusted: current position = {}, new destination = {} (inverted: {})",
-                       i, motor_i_current_pos, newDestination, "no");
+            spdlog::info("Motor {} adjusted: current position = {}, new destination = {} (P-gain={:.1f})",
+                       i, motor_i_current_pos, motorDestinations[i], Kp);
         }
     }
 
@@ -1169,18 +1098,7 @@ bool SystemController::moveToBase(int baseIndex) {
         // Retract the motor associated with this base by N steps, extend the other two motors by N steps
         groupSyncWrite.clearParam();
         for (int i = 0; i < MOTOR_CNT; i++) {
-            int newPosition = i == baseIndex ? motorDestinations[i] + config.calibrationMovementSteps : motorDestinations[i] - config.calibrationMovementSteps;
-            // if (i == baseIndex) {
-            //     // Retract this motor (increase position by calibrationMovementSteps)
-            //     int newPosition = motorDestinations[i] + config.calibrationMovementSteps;
-            //     motorDestinations[i] = std::min(newPosition, maxPos);  // Clamp to max
-            // } else {
-            //     // Extend other motors (decrease position by calibrationMovementSteps)
-            //     int newPosition = motorDestinations[i] - config.calibrationMovementSteps;
-            //     motorDestinations[i] = std::max(newPosition, minPos);  // Clamp to min
-            // }
-            //
-            motorDestinations[i] = newPosition;
+            motorDestinations[i] = i == baseIndex ? motorDestinations[i] + config.calibrationMovementSteps : motorDestinations[i] - config.calibrationMovementSteps;
 
             if (!motors[i].setMotorDestination(&groupSyncWrite, motorDestinations[i])) {
                 spdlog::error("Failed to set destination for motor {} when moving to base {}", i, baseIndex);
