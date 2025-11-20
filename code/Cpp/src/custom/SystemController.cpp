@@ -384,7 +384,7 @@ void SystemController::run() {
             if (currentState == States::RUNNING) {
                 // If the commandProcessed exists, then let's set motorpositions based on that
                 if (commandAvailable) {
-                    calculateMotorPositionsFromCommand(sharedCmd);
+                    setMotorDestinationsForTarget(desiredPosition);
                 }
 
                 // Send new motor commands
@@ -438,8 +438,9 @@ States SystemController::processStateTransition(States current) {
             GetAsynchronousRecord(3, &currentPosition, sizeof(currentPosition));
             sharedMemory->writeStatusUpdate(currentPosition, staticBasePositions, currentStateToString());
 
+            spdlog::info("Waiting for DAQ values to become available");
             while (!g_systemControllerInstance->daqDataAvailable) {
-                spdlog::info("Waiting for DAQ values to become available");
+                    ;
             }
 
             while (!performSafetyCheck(currentPosition)) {
@@ -452,6 +453,13 @@ States SystemController::processStateTransition(States current) {
             // Calculate centroid of the three base positions
             calculateCentroid();
             desiredPosition = centroidPosition;
+
+            MotorCommand sharedCmd;
+            sharedCmd.execute = false;
+            sharedCmd.target_x = desiredPosition.x;
+            sharedCmd.target_y = desiredPosition.y;
+            sharedCmd.target_z = desiredPosition.z;
+            sharedMemory->writeMotorCommand(sharedCmd);
 
             // Move to centroid position
             setMotorDestinationsForTarget(desiredPosition);
@@ -497,10 +505,12 @@ States SystemController::processStateTransition(States current) {
                 GetAsynchronousRecord(3, &currentPosition, sizeof(currentPosition));
 
                 // Calculate vector from current to desired position
-                double dx = currentPosition.x - desiredPosition.x;
-                double dy = currentPosition.y - desiredPosition.y;
-                double dz = currentPosition.z - desiredPosition.z;
-                spdlog::info("Desired position: ({}, {}, {})", desiredPosition.x, desiredPosition.y, desiredPosition.z);
+                double dx = desiredPosition.x - currentPosition.x;
+                double dy = desiredPosition.y - currentPosition.y;
+                double dz = desiredPosition.z - currentPosition.z;
+                spdlog::info("Current position: ({:.3f}, {:.3f}, {:.3f})", currentPosition.x, currentPosition.y, currentPosition.z);
+                spdlog::info("Desired position: ({:.3f}, {:.3f}, {:.3f})", desiredPosition.x, desiredPosition.y, desiredPosition.z);
+                spdlog::info("Difference vector (dx, dy, dz): ({:.3f}, {:.3f}, {:.3f})", dx, dy, dz);
 
                 double posError = sqrt(pow(dx, 2) + pow(dy, 2) + pow(dz, 2));
                 spdlog::info("Vector magnitude: {:.3f}", posError);
@@ -522,20 +532,21 @@ States SystemController::processStateTransition(States current) {
                 double b = a2 * c1 - a1 * c2;
                 double c = a1 * b2 - b1 * a2;
                 double normalMagnitude = sqrt(pow(a, 2) + pow(b, 2) + pow(c, 2));
+                spdlog::info("Plane normal (a, b, c): ({:.3f}, {:.3f}, {:.3f}), magnitude: {:.3f}", a, b, c, normalMagnitude);
 
                 // Calculate angle between vector and plane normal
                 // If vector is perpendicular to plane, it should be parallel to normal (angle near 0 or 180)
                 double dotProduct = dx*a + dy*b + dz*c;
                 double cosAngle = std::max(-1.0, std::min(1.0, dotProduct / (posError * normalMagnitude)));
+                spdlog::info("Dot product: {:.3f}, cosAngle: {:.3f}", dotProduct, cosAngle);
 
                 // angleToNormal is angle between vector and normal
                 double angleToNormal = acos(std::abs(cosAngle)) * 180.0 / M_PI;
+                spdlog::info("Angle to plane normal: {:.1f} deg", angleToNormal);
 
                 // We want vector perpendicular to plane (parallel to normal), so angleToNormal should be near 0
                 // TODO: Make this configurable
-                const double angleThreshold = 5.0;
-
-                spdlog::info("Angle to plane normal: {:.1f} deg", angleToNormal);
+                const double angleThreshold = 10.0;
                 if (angleToNormal > angleThreshold) {
                     spdlog::warn("Position vector not perpendicular to base plane (angle: {:.1f} deg > {:.1f} deg threshold)",
                                 angleToNormal, angleThreshold);
@@ -775,6 +786,13 @@ bool SystemController::readSharedMemoryCommand(MotorCommand& cmd) {
         return false;  // Command not ready for execution
     }
 
+    if ((std::abs(cmd.target_x) > config.trackingDeadband) ||
+        (std::abs(cmd.target_y) > config.trackingDeadband) ||
+        (std::abs(cmd.target_z) > config.trackingDeadband)) {
+        spdlog::warn("SHM: Target cannot be reached, outside of DEADBAND.");
+        return false;
+    }
+
     // Clear the execute flag and write back to shared memory
     MotorCommand clearedCmd = cmd;
     clearedCmd.execute = false;
@@ -786,53 +804,6 @@ bool SystemController::readSharedMemoryCommand(MotorCommand& cmd) {
     return true;
 }
 
-// Calculate motor positions from shared memory command
-void SystemController::calculateMotorPositionsFromCommand(const MotorCommand& cmd) {
-    if ((std::abs(cmd.target_x) > config.trackingDeadband) ||
-        (std::abs(cmd.target_y) > config.trackingDeadband) ||
-        (std::abs(cmd.target_z) > config.trackingDeadband)) {
-        spdlog::warn("SHM: Target cannot be reached, outside of DEADBAND.");
-    }
-
-    // Convert mm to Dynamixel units using motor's conversion function
-    if (!motors.empty()) {
-        for (int i = 0; i < MOTOR_CNT; i++) {
-            double curr_x = currentPosition.x - staticBasePositions[i].x;
-            double curr_y = currentPosition.y - staticBasePositions[i].y;
-            double curr_z = currentPosition.z - staticBasePositions[i].z;
-            double curr_cable_length = sqrt(pow(curr_x, 2) + pow(curr_y, 2) + pow(curr_z, 2));
-            int curr_step_count = motors[i].mmToDynamixelUnits(curr_cable_length);
-            spdlog::info("SHM: Base {}. Current cable length/step count: {}/{}", i, curr_cable_length, curr_step_count);
-
-            double dx = cmd.target_x - staticBasePositions[i].x;
-            double dy = cmd.target_y - staticBasePositions[i].y;
-            double dz = cmd.target_z - staticBasePositions[i].z;
-            double desired_cable_length = sqrt(pow(dx, 2) + pow(dy, 2) + pow(dz, 2));
-            int desired_step_count = motors[i].mmToDynamixelUnits(desired_cable_length);
-            spdlog::info("SHM: Desired cable length/step count: {}/{}", desired_cable_length, desired_step_count);
-
-            int actual_curr_step_count = motors[i].checkAndGetPresentPosition(&groupSyncRead);
-            spdlog::info("SHM: Actual motor step count: {}", actual_curr_step_count);
-
-            // Assume:
-            // Actual step count = 0, 0, 0
-            // Actual position = 1, 1, 1
-            // Desired position = 0, 0, 0
-            // We would expect:
-            // Desired step count = 1, 1, 1 (to go from 1, 1, 1 to 0, 0, 0)
-
-            // Actual position = 0, 0, 0
-            // Desired position = 1, 1, 1
-            // Expect:
-            // Desired step count = -1, -1, -1 ( to go from 0, 0, 0 to 1, 1, 1)
-            motorDestinations[i] = actual_curr_step_count + (curr_step_count - desired_step_count);
-        }
-
-        spdlog::info("SHM: Target ({:.2f}, {:.2f}, {:.2f}) -> Dest: [{:4d}, {:4d}, {:4d}]",
-                    cmd.target_x, cmd.target_y, cmd.target_z,
-                    motorDestinations[0], motorDestinations[1], motorDestinations[2]);
-    }
-}
 
 void SystemController::setMotorDestinationsForTarget(DOUBLE_POSITION_ANGLES_RECORD& targetPos) {
     for (int i = 0; i < MOTOR_CNT; i++) {
@@ -850,9 +821,20 @@ void SystemController::setMotorDestinationsForTarget(DOUBLE_POSITION_ANGLES_RECO
         int desired_step_count = motors[i].mmToDynamixelUnits(desired_cable_length);
         spdlog::info("Desired cable length/step count: {}/{}", desired_cable_length, desired_step_count);
 
-        int actual_curr_step_count = motors[i].checkAndGetPresentPosition(&groupSyncRead);
+        int actual_curr_step_count = motors[i].checkAndGetPresentPosition(packetHandler, portHandler, &groupSyncRead);
         spdlog::info("Actual motor step count: {}", actual_curr_step_count);
 
+        // Assume:
+        // Actual step count = 0, 0, 0
+        // Actual position = 1, 1, 1
+        // Desired position = 0, 0, 0
+        // We would expect:
+        // Desired step count = 1, 1, 1 (to go from 1, 1, 1 to 0, 0, 0)
+
+        // Actual position = 0, 0, 0
+        // Desired position = 1, 1, 1
+        // Expect:
+        // Desired step count = -1, -1, -1 ( to go from 0, 0, 0 to 1, 1, 1)
         motorDestinations[i] = actual_curr_step_count + (curr_step_count - desired_step_count);
     }
 }
@@ -900,13 +882,13 @@ bool SystemController::readMotorPositions() {
         bool allReached = true;
         
         for (int j = 0; j < MOTOR_CNT && j < static_cast<int>(motors.size()); j++) {
-            uint32_t motor_j_current_pos = motors[j].checkAndGetPresentPosition(&groupSyncRead);
+            uint32_t motor_j_current_pos = motors[j].checkAndGetPresentPosition(packetHandler, portHandler, &groupSyncRead);
             if (!motors[j].checkIfAtGoalPosition(motorDestinations[j])) {
                 allReached = false;
             }
 
             spdlog::debug("Motor {}: Current: {}, Target: {}, Diff: {}", 
-                         j, motor_j_current_pos, motorDestinations[j], std::abs(static_cast<int>(motor_j_current_pos) - motorDestinations[j]));
+                         j, motor_j_current_pos, motorDestinations[j], static_cast<int>(motor_j_current_pos) - motorDestinations[j]);
         }
 
         return allReached;
@@ -943,20 +925,23 @@ bool SystemController::adjustTensionBasedOnLoadCells() {
             adjustment = -adjustment;
             spdlog::info("Motor {} overload ({:.3f}V < {:.3f}V, error={:.3f}V) - relieving tension by {} steps (P-term)",
                        i, channelAverages[i], config.minLoadVoltage, error, -adjustment);
+            setLEDState(i, LED_OFF);
         }
         // Check if load is too low (potential sensor issue or slack cable)
         // Too low means that it is higher than our max voltage
         else if (channelAverages[i] > config.maxLoadVoltage) {
             spdlog::info("Motor {} underload ({:.3f}V > {:.3f}V, error={:.3f}V) - increasing tension by {} steps (P-term)",
                        i, channelAverages[i], config.maxLoadVoltage, error, adjustment);
+            setLEDState(i, LED_OFF);
         }
         else {
             adjustment = 0;
+            setLEDState(i, LED_ON);
         }
 
         // Apply adjustment if needed
         if (adjustment != 0) {
-            int motor_i_current_pos = motors[i].checkAndGetPresentPosition(&groupSyncRead);
+            int motor_i_current_pos = motors[i].checkAndGetPresentPosition(packetHandler, portHandler, &groupSyncRead);
             motorDestinations[i] = motor_i_current_pos + adjustment;
             adjustmentMade = true;
 
@@ -1048,7 +1033,7 @@ bool SystemController::detectBaseArrival(int motorIndex) {
 
     while (stableReadCount < config.calibrationStabilityReads) {
         // Read current motor position
-        int currentPos = motors[motorIndex].checkAndGetPresentPosition(&groupSyncRead);
+        int currentPos = motors[motorIndex].checkAndGetPresentPosition(packetHandler, portHandler, &groupSyncRead);
 
         // Check if we've reached the commanded position
         if (motors[motorIndex].checkIfAtGoalPosition(motorDestinations[motorIndex])) {
