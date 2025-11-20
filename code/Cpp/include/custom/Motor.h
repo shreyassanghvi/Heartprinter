@@ -7,7 +7,7 @@
 
 #define TORQUE_ENABLE                   1                   // Value for enabling the torque
 #define TORQUE_DISABLE                  0                   // Value for disabling the torque
-#define DXL_MOVING_STATUS_THRESHOLD     5                   // DYNAMIXEL moving status threshold
+#define DXL_MOVING_STATUS_THRESHOLD     10                   // DYNAMIXEL moving status threshold
 #define VELOCITY_CONTROL_MODE           1                   // Mode is unavailable in Protocol 1.0 Reset
 #define POSITION_CONTROL_MODE           3                   // Mode is unavailable in Protocol 1.0 Reset
 #define EXTENDED_POSITION_CONTROL_MODE  4                   // Mode is unavailable in Protocol 1.0 Reset
@@ -51,7 +51,7 @@ public:
 
     bool setMotorDestination(dynamixel::GroupSyncWrite *groupSyncWrite, double goalPosition) const;
 
-    uint32_t checkAndGetPresentPosition(dynamixel::GroupSyncRead *groupSyncRead);
+    uint32_t checkAndGetPresentPosition(dynamixel::PacketHandler *packetHandler, dynamixel::PortHandler *portHandler, dynamixel::GroupSyncRead *groupSyncRead);
 
     bool checkIfAtGoalPosition(int goalPosition) const;
 
