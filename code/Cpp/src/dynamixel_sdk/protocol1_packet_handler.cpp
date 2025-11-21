@@ -22,7 +22,7 @@
 #include "protocol1_packet_handler.h"
 #elif defined(_WIN32) || defined(_WIN64)
 #define WINDLLEXPORT
-#include "DynamixelSDK.h"
+#include "protocol1_packet_handler.h"
 #elif defined(ARDUINO) || defined(__OPENCR__) || defined(__OPENCM904__) || defined(ARDUINO_OpenRB)
 #include "../../include/dynamixel_sdk/protocol1_packet_handler.h"
 #endif

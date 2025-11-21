@@ -16,7 +16,7 @@
 
 /* Author: zerom, Ryu Woon Jung (Leon) */
 
-#include <cstdio>
+#include <stdio.h>
 #include <algorithm>
 
 #if defined(__linux__)
@@ -25,7 +25,7 @@
 #include "group_bulk_read.h"
 #elif defined(_WIN32) || defined(_WIN64)
 #define WINDLLEXPORT
-#include "DynamixelSDK.h"
+#include "group_bulk_read.h"
 #elif defined(ARDUINO) || defined(__OPENCR__) || defined(__OPENCM904__) || defined(ARDUINO_OpenRB)
 #include "../../include/dynamixel_sdk/group_bulk_read.h"
 #endif
@@ -226,8 +226,9 @@ uint32_t GroupBulkRead::getData(uint8_t id, uint16_t address, uint16_t data_leng
 
 bool GroupBulkRead::getError(uint8_t id, uint8_t* error)
 {
-  // TODO : check protocol version, last_result_, data_list
-  // if (last_result_ == false || error_list_.find(id) == error_list_.end())
+  if (ph_->getProtocolVersion() == 1.0 || !last_result_ || error_list_.find(id) == error_list_.end())
+    return false;
 
-  return (error[0] = error_list_[id][0]);
+  error[0] = error_list_[id][0];
+  return true;
 }
