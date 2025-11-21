@@ -22,7 +22,7 @@
 #include "group_handler.h"
 #elif defined(_WIN32) || defined(_WIN64)
 #define WINDLLEXPORT
-#include "group_handler.h"
+#include "DynamixelSDK.h"
 #elif defined(ARDUINO) || defined(__OPENCR__) || defined(__OPENCM904__)
 #include "../../include/dynamixel_sdk/group_handler.h"
 #endif

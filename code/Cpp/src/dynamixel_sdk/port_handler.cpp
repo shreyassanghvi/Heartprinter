@@ -24,8 +24,7 @@
 #include "port_handler_mac.h"
 #elif defined(_WIN32) || defined(_WIN64)
 #define WINDLLEXPORT
-#include "port_handler.h"
-#include "port_handler_windows.h"
+#include "DynamixelSDK.h"
 #elif defined(ARDUINO) || defined(__OPENCR__) || defined(__OPENCM904__) || defined(ARDUINO_OpenRB)
 #include "../../include/dynamixel_sdk/port_handler.h"
 #include "../../include/dynamixel_sdk/port_handler_arduino.h"
