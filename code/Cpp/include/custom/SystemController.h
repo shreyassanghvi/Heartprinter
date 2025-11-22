@@ -160,11 +160,13 @@ private:
 
     // Motor control methods from StateController
     bool readSharedMemoryCommand(MotorCommand& cmd);
+    bool validateMotorCommand(MotorCommand& cmd);
     void calculateMotorPositionsFromCommand(const MotorCommand& cmd);
     void calculateMotorPositionsFromTracking();
     bool moveMotorPositions();
     bool readMotorPositions();
     bool adjustTensionBasedOnLoadCells();
+    bool currentCloseToDesired();
 
     // Calibration methods
     bool validateProbes();
