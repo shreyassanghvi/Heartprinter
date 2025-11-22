@@ -436,6 +436,9 @@ States SystemController::processStateTransition(States current) {
                     spdlog::error("Failed to adjust tension - entering error state");
                     return States::ERR;
                 }
+				while (!readMotorPositions()) {
+					;
+				}
             }
 
             // Calculate centroid of the three base positions
