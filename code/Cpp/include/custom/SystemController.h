@@ -65,7 +65,6 @@ struct SystemConfig {
     // Motor configuration
     std::string deviceName = "/dev/ttyUSB0";
     int baudRate = 57600;
-    int recordCount = 1000;
 
     // Safety configuration
     bool enableSafetyChecks = true;

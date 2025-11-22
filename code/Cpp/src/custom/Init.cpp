@@ -142,7 +142,6 @@ int main(int argc, char *argv[]) {
         SystemConfig config;
         config.deviceName = "COM4";  // Adjust for your system
         config.baudRate = 57600;
-        config.recordCount = 10000;
         config.enableSafetyChecks = true;
         config.maxLoadVoltage = -0.02;
         config.minLoadVoltage = -0.05;
