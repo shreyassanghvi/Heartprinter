@@ -48,6 +48,7 @@ bool getUserConfirmation(const std::string& prompt) {
 // Pre-initialization checklist
 // Returns true if all checks pass, false if user responds 'n' to any check
 bool runPreInitializationChecklist() {
+    // TODO: Fix this since it doesn't work unless we do a DEBUG build.
     std::cout << "Heart Printer Pre-Initialization Checklist" << std::endl;
 
     if (!getUserConfirmation("1. Is the power to the system on?")) {
@@ -136,6 +137,7 @@ int main(int argc, char *argv[]) {
     auto logger = create_dated_logger(true);
     spdlog::info("Heart Printer System starting...");
 
+    // TODO: We need to catch SIGINT and send system to the CLEANUP state
     try {
         spdlog::info("Setting up config");
         // Create system configuration
