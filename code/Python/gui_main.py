@@ -651,6 +651,17 @@ class MainWindow(QWidget):
         home = np.mean(self.points, axis=0)
         self.waypoint_home_position = home.copy()
 
+        # TODO: Update waypoint routine to do this:
+        #   A. For each static base:
+        #       1. Move to home position
+        #       2. Move close (~1mm) to a base
+        #       3. Move back to home position
+        #   B. For the midpoint between each static base:
+        #       1. Move to home position
+        #       2. Move close to the midpoint
+        #       3. Move back to home position
+
+
         # Get heart frame transform
         R, centroid = compute_heart_frame_transform(self.points)
 
