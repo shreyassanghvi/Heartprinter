@@ -71,7 +71,7 @@ bool SystemController::initialize() {
     try {
         spdlog::info("Initializing Heart Printer System...");
         currentState = States::INITIALIZING;
-        
+
         // Initialize shared memory first
         if (sharedMemory && !sharedMemory->initialize()) {
             spdlog::warn("Failed to initialize shared memory - continuing without it");
@@ -84,9 +84,9 @@ bool SystemController::initialize() {
                                       "Failed to initialize hardware"));
             return false;
         }
+
         currentState = States::CALIBRATION;
         initialized = true;
-
         sharedMemory->writeStatusUpdate(currentPosition, staticBasePositions, currentStateToString());
         spdlog::info("System initialization complete - Ready for operation");
         return true;
@@ -333,6 +333,7 @@ void SystemController::run() {
 
         // Main control loop - using StateController pattern
         // Only should go into this when RUNNING or MOVING.
+		// TODO: Add a TENSION state here.
         while ((currentState == States::RUNNING || currentState == States::MOVING)) {
             // Process state transitions
             States newState = processStateTransition(currentState);
@@ -340,14 +341,15 @@ void SystemController::run() {
                 std::string state_str = currentStateToString();
                 currentState = newState;
                 spdlog::info("{} -> {}", state_str, currentStateToString());
+				sharedMemory->writeStatusUpdate(currentPosition, staticBasePositions, currentStateToString());
             }
-            sharedMemory->writeStatusUpdate(currentPosition, staticBasePositions, currentStateToString());
 
             // Break if we're no longer in a valid running state
+			// TODO: Add TENSION state here
             if (currentState != States::RUNNING && currentState != States::MOVING) {
                 break;
             }
-            
+
             // Read tracking data
             try {
                 validateProbes();
@@ -357,6 +359,8 @@ void SystemController::run() {
                 handleError(SystemException(SystemError::TRACKER_INIT_FAILED, "Tracking read failed"));
                 break;
             }
+
+			sharedMemory->writeStatusUpdate(currentPosition, staticBasePositions, currentStateToString());
 
             // Read from shared memory
             MotorCommand sharedCmd;
@@ -370,17 +374,14 @@ void SystemController::run() {
 
             // If we are in the RUNNING state:
             if (currentState == States::RUNNING) {
-                // If the commandProcessed exists, then let's set motorpositions based on that
-                if (commandAvailable) {
-                    setMotorDestinationsForTarget(desiredPosition);
-                }
-
-                // Send new motor commands
-                if (!moveMotorPositions()) {
-                    spdlog::error("Failed to move motors");
-                    handleError(SystemException(SystemError::MOTOR_INIT_FAILED, "Motor movement failed"));
-                    break;
-                }
+                // There are two cases where we need to move
+				// One is when we receive a command to move and execute.
+				// validateMotorCommands() will set our desiredPosition, only if we are supposed to execute.
+				// The other is when we are not close to our desiredPosition (handled by state machine)
+				// Then we let the stateMachine handle whether we're close enough to our desired.
+				if (commandAvailable) {
+					validateMotorCommand(sharedCmd);
+				}
             }
             // If we are in the MOVING state, just continue
             
@@ -403,6 +404,7 @@ void SystemController::run() {
 // Process state transitions with proper error handling
 States SystemController::processStateTransition(States current) {
     switch (current) {
+        // TODO: Add new TENSIONING state
         case States::START:
             return States::INITIALIZING;
 
@@ -445,6 +447,9 @@ States SystemController::processStateTransition(States current) {
             calculateCentroid();
             desiredPosition = centroidPosition;
 
+			// TODO: Maybe we just set the desiredPosition here, and then move to the READY state and have
+			// 	the rest of the control loop move us?
+			// 	We are already essentially doing that, we're just issuing the movement command in here instead.
             MotorCommand sharedCmd;
             sharedCmd.execute = false;
             sharedCmd.target_x = desiredPosition.x;
@@ -473,6 +478,7 @@ States SystemController::processStateTransition(States current) {
             }
             // Check for safety conditions
             if (!performSafetyCheck(currentPosition)) {
+				// TODO: This should move us to the TENSION state
                 spdlog::warn("Safety check failed - tension outside of normal bounds.");
 
                 // Attempt to adjust motor positions to correct tension
@@ -485,6 +491,17 @@ States SystemController::processStateTransition(States current) {
                 return States::MOVING;
             }
 
+			// If we're not close to our desiredPosition, then we need to start moving towards it.
+			if (!currentCloseToDesired()) {
+				setMotorDestinationsForTarget(desiredPosition);
+				if (!moveMotorPositions()) {
+                    spdlog::error("Failed to move motors");
+                    handleError(SystemException(SystemError::MOTOR_INIT_FAILED, "Motor movement failed"));
+                    break;
+				}
+				return States::MOVING;
+			}
+
             return States::RUNNING;
 
         case States::MOVING:
@@ -492,63 +509,16 @@ States SystemController::processStateTransition(States current) {
             if (readMotorPositions()) {
                 spdlog::debug("Motors reached target positions");
                 // We need to check to see whether the trackstar current position actually matches that of the desired position
-
-                GetAsynchronousRecord(3, &currentPosition, sizeof(currentPosition));
-
-                // Calculate vector from current to desired position
-                double dx = desiredPosition.x - currentPosition.x;
-                double dy = desiredPosition.y - currentPosition.y;
-                double dz = desiredPosition.z - currentPosition.z;
-                spdlog::info("Current position: ({:.3f}, {:.3f}, {:.3f})", currentPosition.x, currentPosition.y, currentPosition.z);
-                spdlog::info("Desired position: ({:.3f}, {:.3f}, {:.3f})", desiredPosition.x, desiredPosition.y, desiredPosition.z);
-                spdlog::info("Difference vector (dx, dy, dz): ({:.3f}, {:.3f}, {:.3f})", dx, dy, dz);
-
-                double posError = sqrt(pow(dx, 2) + pow(dy, 2) + pow(dz, 2));
-                spdlog::info("Vector magnitude: {:.3f}", posError);
-
-                // If we're somehow very close to the desiredPosition (probably when we're near the bases) go to RUNNING
-                if (posError < 1.5) {
-                    return States::RUNNING;
-                }
-
-                // Calculate plane
-                double a1 = staticBasePositions[1].x - staticBasePositions[0].x;
-                double b1 = staticBasePositions[1].y - staticBasePositions[0].y;
-                double c1 = staticBasePositions[1].z - staticBasePositions[0].z;
-                double a2 = staticBasePositions[2].x - staticBasePositions[0].x;
-                double b2 = staticBasePositions[2].y - staticBasePositions[0].y;
-                double c2 = staticBasePositions[2].z - staticBasePositions[0].z;
-
-                double a = b1 * c2 - b2 * c1;
-                double b = a2 * c1 - a1 * c2;
-                double c = a1 * b2 - b1 * a2;
-                double normalMagnitude = sqrt(pow(a, 2) + pow(b, 2) + pow(c, 2));
-                spdlog::info("Plane normal (a, b, c): ({:.3f}, {:.3f}, {:.3f}), magnitude: {:.3f}", a, b, c, normalMagnitude);
-
-                // Calculate angle between vector and plane normal
-                // If vector is perpendicular to plane, it should be parallel to normal (angle near 0 or 180)
-                double dotProduct = dx*a + dy*b + dz*c;
-                double cosAngle = std::max(-1.0, std::min(1.0, dotProduct / (posError * normalMagnitude)));
-                spdlog::info("Dot product: {:.3f}, cosAngle: {:.3f}", dotProduct, cosAngle);
-
-                // angleToNormal is angle between vector and normal
-                double angleToNormal = acos(std::abs(cosAngle)) * 180.0 / M_PI;
-                spdlog::info("Angle to plane normal: {:.1f} deg", angleToNormal);
-
-                // We want vector perpendicular to plane (parallel to normal), so angleToNormal should be near 0
-                // TODO: Make this configurable
-                const double angleThreshold = 10.0;
-                if (angleToNormal > angleThreshold) {
-                    spdlog::warn("Position vector not perpendicular to base plane (angle: {:.1f} deg > {:.1f} deg threshold)",
-                                angleToNormal, angleThreshold);
-                    setMotorDestinationsForTarget(desiredPosition);
-                    if (!moveMotorPositions()) {
-                        spdlog::error("Failed to move motors");
-                        handleError(SystemException(SystemError::MOTOR_INIT_FAILED, "Motor movement failed"));
-                        break;
-                    }
-                    return States::MOVING;
-                }
+				if (!currentCloseToDesired()) {
+					spdlog::warn("Position not close enough to desired - adjusting motor positions");
+        			setMotorDestinationsForTarget(desiredPosition);
+        			if (!moveMotorPositions()) {
+            			spdlog::error("Failed to move motors");
+            			handleError(SystemException(SystemError::MOTOR_INIT_FAILED, "Motor movement failed"));
+            			break;
+        			}
+					return States::MOVING;
+				}
                 return States::RUNNING;
             }
             return States::MOVING;
@@ -675,6 +645,7 @@ bool SystemController::getDAQChannelAverages(double averages[3]) const {
         return false;  // No data available yet
     }
 
+    // TODO: we should set daqDataAvailable to false so that we can wait for new daq data
     try {
         std::lock_guard<std::mutex> lock(daqDataMutex);
         for (int i = 0; i < 3; i++) {
@@ -764,16 +735,17 @@ bool SystemController::readSharedMemoryCommand(MotorCommand& cmd) {
         return false;
     }
 
-    // Update status in shared memory
-    sharedMemory->writeStatusUpdate(currentPosition, staticBasePositions, currentStateToString());
-
     // Try to read shared memory command
     if (!sharedMemory->readMotorCommand(cmd)) {
         return false;
     }
 
-    // Check if command should be executed
-    if (!cmd.execute) {
+    return true;
+}
+
+bool SystemController::validateMotorCommand(MotorCommand& cmd) {
+	// Check if command should be executed
+	if (!cmd.execute) {
         return false;  // Command not ready for execution
     }
 
@@ -791,10 +763,8 @@ bool SystemController::readSharedMemoryCommand(MotorCommand& cmd) {
     desiredPosition.y = cmd.target_y;
     desiredPosition.z = cmd.target_z;
     sharedMemory->writeMotorCommand(clearedCmd);
-
-    return true;
+	return true;
 }
-
 
 void SystemController::setMotorDestinationsForTarget(DOUBLE_POSITION_ANGLES_RECORD& targetPos) {
     for (int i = 0; i < MOTOR_CNT; i++) {
@@ -837,7 +807,6 @@ bool SystemController::moveMotorPositions() {
     }
     
     try {
-
         // Use the group sync write
         for (int j = 0; j < MOTOR_CNT && j < static_cast<int>(motors.size()); j++) {
             if (!motors[j].setMotorDestination(&groupSyncWrite, motorDestinations[j])) {
@@ -892,6 +861,7 @@ bool SystemController::readMotorPositions() {
 // Adjust motor positions based on load cell readings to maintain safe tension
 bool SystemController::adjustTensionBasedOnLoadCells() {
     double channelAverages[3];
+    // TODO: Wait until we get DAQ data.
     if (!getDAQChannelAverages(channelAverages)) {
         spdlog::warn("Cannot adjust tension - DAQ data not available");
         return false;
@@ -1162,4 +1132,59 @@ bool SystemController::performCalibration() {
     spdlog::info("Calibration Complete");
 
     return true;
+}
+
+bool SystemController::currentCloseToDesired() {
+	// Set the most updated currentPosition
+    GetAsynchronousRecord(3, &currentPosition, sizeof(currentPosition));
+
+    // Calculate vector from current to desired position
+    double dx = desiredPosition.x - currentPosition.x;
+    double dy = desiredPosition.y - currentPosition.y;
+    double dz = desiredPosition.z - currentPosition.z;
+    spdlog::info("Current position: ({:.3f}, {:.3f}, {:.3f})", currentPosition.x, currentPosition.y, currentPosition.z);
+    spdlog::info("Desired position: ({:.3f}, {:.3f}, {:.3f})", desiredPosition.x, desiredPosition.y, desiredPosition.z);
+    spdlog::info("Difference vector (dx, dy, dz): ({:.3f}, {:.3f}, {:.3f})", dx, dy, dz);
+
+    double posErrorVector = sqrt(pow(dx, 2) + pow(dy, 2) + pow(dz, 2));
+    spdlog::info("Error vector magnitude: {:.3f}", posErrorVector);
+
+    // If we're somehow very close to the desiredPosition (probably when we're near the bases) go to RUNNING
+	// TODO: Make this configurable
+	const double posErrorThreshold = 1.5;
+    if (posErrorVector < posErrorThreshold) {
+        return true;
+    }
+
+	spdlog::warn("Error vector magnitude {} > {} Error Threshold", posErrorVector, angleThreshold);
+
+    // Calculate plane
+    double a1 = staticBasePositions[1].x - staticBasePositions[0].x;
+    double b1 = staticBasePositions[1].y - staticBasePositions[0].y;
+    double c1 = staticBasePositions[1].z - staticBasePositions[0].z;
+    double a2 = staticBasePositions[2].x - staticBasePositions[0].x;
+    double b2 = staticBasePositions[2].y - staticBasePositions[0].y;
+    double c2 = staticBasePositions[2].z - staticBasePositions[0].z;
+
+    double a = b1 * c2 - b2 * c1;
+    double b = a2 * c1 - a1 * c2;
+    double c = a1 * b2 - b1 * a2;
+    double normalMagnitude = sqrt(pow(a, 2) + pow(b, 2) + pow(c, 2));
+    spdlog::info("Plane normal (a, b, c): ({:.3f}, {:.3f}, {:.3f}), magnitude: {:.3f}", a, b, c, normalMagnitude);
+
+    // Calculate angle between vector and plane normal
+    // If vector is perpendicular to plane, it should be parallel to normal (angle near 0 or 180)
+    double dotProduct = dx*a + dy*b + dz*c;
+    double cosAngle = std::max(-1.0, std::min(1.0, dotProduct / (posError * normalMagnitude)));
+    spdlog::info("Dot product: {:.3f}, cosAngle: {:.3f}", dotProduct, cosAngle);
+
+    // angleToNormal is angle between vector and normal
+    double angleToNormal = acos(std::abs(cosAngle)) * 180.0 / M_PI;
+    spdlog::info("Angle to plane normal: {:.1f} deg", angleToNormal);
+
+    // We want vector perpendicular to plane (parallel to normal), so angleToNormal should be near 0
+    // TODO: Make this configurable
+    const double angleThreshold = 7.0;
+	spdlog::warn("angleToNormal: {:.1f} deg, {:.1f} deg threshold)", angleToNormal, angleThreshold);
+	return angleToNormal <= angleThreshold;
 }
