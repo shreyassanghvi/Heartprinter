@@ -331,12 +331,9 @@ void SystemController::run() {
     try {
         spdlog::info("Starting main control loop...");
 
-        int dataCount = 0;
-        const int MAX_RECORDS = config.recordCount;
-        
         // Main control loop - using StateController pattern
         // Only should go into this when RUNNING or MOVING.
-        while ((currentState == States::RUNNING || currentState == States::MOVING) && dataCount < MAX_RECORDS) {
+        while ((currentState == States::RUNNING || currentState == States::MOVING)) {
             // Process state transitions
             States newState = processStateTransition(currentState);
             if (newState != currentState) {
@@ -355,15 +352,6 @@ void SystemController::run() {
             try {
                 validateProbes();
                 GetAsynchronousRecord(3, &currentPosition, sizeof(currentPosition));
-
-                dataCount++;
-
-                // Log position data
-                spdlog::info("TS: [{:3d}] {:8.3f} {:8.3f} {:8.3f} : {:8.3f} {:8.3f} {:8.3f}",
-                           dataCount,
-                           currentPosition.x, currentPosition.y, currentPosition.z,
-                           currentPosition.a, currentPosition.e, currentPosition.r);
-
             } catch (const std::exception& e) {
                 spdlog::error("Failed to read tracking data: {}", e.what());
                 handleError(SystemException(SystemError::TRACKER_INIT_FAILED, "Tracking read failed"));
@@ -403,7 +391,7 @@ void SystemController::run() {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
         
-        spdlog::info("Control loop completed - collected {} records", dataCount);
+        spdlog::info("Control loop completed");
         
     } catch (const SystemException& e) {
         handleError(e);
