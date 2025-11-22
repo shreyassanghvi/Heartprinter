@@ -24,6 +24,8 @@ Motor::Motor(const int id) {
     this->motor.DXL_ID = id;
 }
 
+// TODO: Update all of these to use the fast sync/write functionality.
+
 /**
  * @brief Enable the torque of the motor.
  *
