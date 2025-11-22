@@ -27,6 +27,64 @@ namespace fs = std::filesystem;
 #define RECORD_CNT                          10000                 // Number of records to collect
 #define MOTOR_CNT                           3                  // Number of motors to control
 
+bool getUserConfirmation(const std::string& prompt) {
+    std::string input;
+    while (true) {
+        std::cout << prompt << " (y/n): ";
+        std::getline(std::cin, input);
+
+        if (!input.empty()) {
+            char response = std::tolower(input[0]);
+            if (response == 'y') {
+                return true;
+            } else if (response == 'n') {
+                return false;
+            }
+        }
+        std::cout << "Invalid input. Please enter 'y' or 'n'." << std::endl;
+    }
+}
+
+// Pre-initialization checklist
+// Returns true if all checks pass, false if user responds 'n' to any check
+bool runPreInitializationChecklist() {
+    std::cout << "Heart Printer Pre-Initialization Checklist" << std::endl;
+
+    if (!getUserConfirmation("1. Is the power to the system on?")) {
+        spdlog::error("Pre-check failed: System power not confirmed. Please restart from the beginning.");
+        return false;
+    }
+    spdlog::info("Check passed: System power confirmed");
+
+    if (!getUserConfirmation("2. Is the ESTOP off?")) {
+        spdlog::error("Pre-check failed: ESTOP status not confirmed. Please restart from the beginning.");
+        return false;
+    }
+    spdlog::info("Check passed: ESTOP confirmed off");
+
+    if (!getUserConfirmation("3. Is the TrackStar beacon next to the patient?")) {
+        spdlog::error("Pre-check failed: TrackStar beacon placement not confirmed. Please restart from the beginning.");
+        return false;
+    }
+    spdlog::info("Check passed: TrackStar beacon placement confirmed");
+
+    if (!getUserConfirmation("4. Are the Loadcell power switches set to on?")) {
+        spdlog::error("Pre-check failed: Loadcell power not confirmed. Please restart from the beginning.");
+        return false;
+    }
+    spdlog::info("Check passed: Loadcell power confirmed");
+
+    if (!getUserConfirmation("5. Did you power cycle the motors?")) {
+        spdlog::error("Pre-check failed: Motor power cycle not confirmed. Please restart from the beginning.");
+        return false;
+    }
+    spdlog::info("Check passed: Motor power cycle confirmed");
+
+    std::cout << "All pre-checks passed! Proceeding..." << std::endl;
+
+    return true;
+}
+
 std::shared_ptr<spdlog::logger> create_dated_logger(bool make_default) {
     std::string log_dir = "../../logs/cpp";
     std::filesystem::create_directories(log_dir);
@@ -84,12 +142,17 @@ int main(int argc, char *argv[]) {
         SystemConfig config;
         config.deviceName = "COM4";  // Adjust for your system
         config.baudRate = 57600;
-        config.recordCount = 1000;
         config.enableSafetyChecks = true;
-        config.maxLoadVoltage = -0.01;
-        config.minLoadVoltage = -0.1;
-        config.tensionAdjustmentSteps = 100;
+        config.maxLoadVoltage = -0.02;
+        config.minLoadVoltage = -0.05;
+        config.tensionAdjustmentSteps = 25;
         config.trackingDeadband = 300.0;
+
+        // Run pre-initialization checklist
+        if (!runPreInitializationChecklist()) {
+            spdlog::error("Pre-initialization checklist failed. Exiting. Please restart from the beginning.");
+            return EXIT_FAILURE;
+        }
 
         // Create and initialize system controller
         spdlog::info("Construct systemcontroller");

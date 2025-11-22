@@ -65,7 +65,6 @@ struct SystemConfig {
     // Motor configuration
     std::string deviceName = "/dev/ttyUSB0";
     int baudRate = 57600;
-    int recordCount = 1000;
 
     // Safety configuration
     bool enableSafetyChecks = true;
@@ -88,6 +87,7 @@ struct SystemConfig {
 struct SystemStatus {
     States currentState = States::START;
     DOUBLE_POSITION_ANGLES_RECORD currentPosition;
+    DOUBLE_POSITION_ANGLES_RECORD desiredPosition;
     bool motorsEnabled = false;
     bool trackingActive = false;
     bool daqActive = false;
@@ -115,6 +115,7 @@ private:
     // Current state
     States currentState = States::START;
     DOUBLE_POSITION_ANGLES_RECORD currentPosition = {};
+    DOUBLE_POSITION_ANGLES_RECORD desiredPosition = {};
     std::string lastErrorMessage;
     bool initialized = false;
 
@@ -206,6 +207,7 @@ public:
     bool isInitialized() const { return initialized; }
     States getCurrentState() const { return currentState; }
     const DOUBLE_POSITION_ANGLES_RECORD& getCurrentPosition() const { return currentPosition; }
+    const DOUBLE_POSITION_ANGLES_RECORD& getDesiredPosition() const { return desiredPosition; }
     std::string getLastError() const { return lastErrorMessage; }
     bool isInSafeZone(double x, double y, double z) const;
     

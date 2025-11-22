@@ -101,6 +101,12 @@ class MainWindow(QWidget):
         self.target_pos = np.zeros(3)
         self._data_changed = False
 
+        # Waypoint routine state
+        self.waypoint_routine_active = False
+        self.waypoint_queue = []
+        self.waypoint_waiting_for_ready = False
+        self.waypoint_home_position = None
+
         self.main_layout = QHBoxLayout(self)
         self.setLayout(self.main_layout)
 
@@ -200,7 +206,7 @@ class MainWindow(QWidget):
         group.setLayout(layout)
         layout.addLayout(grid)
 
-        labels = ["Left", "Center", "Right"]
+        labels = ["Left", "Center", "Right", "Current"]
         self.point_labels_global = []
 
         for i, label_text in enumerate(labels):
@@ -270,12 +276,16 @@ class MainWindow(QWidget):
         action_group = QGroupBox("System Controls")
         action_layout = QVBoxLayout()
 
+        self.waypoint_button = QPushButton("Waypoint Routine")
+        self.waypoint_button.clicked.connect(self.start_waypoint_routine)
+
         self.end_button = QPushButton("End")
         self.end_button.clicked.connect(self.end_system)
 
         self.recenter_button = QPushButton("Fit to Screen")
         self.recenter_button.clicked.connect(self.recenter_view)
 
+        action_layout.addWidget(self.waypoint_button)
         action_layout.addWidget(self.end_button)
         action_layout.addWidget(self.recenter_button)
 
@@ -464,7 +474,8 @@ class MainWindow(QWidget):
                 for i, p in enumerate(self.points):
                     lbl_coord = coord_grid_layout.itemAtPosition(i, 2).widget()
                     lbl_coord.setText(f"({p[0]:.3f}, {p[1]:.3f}, {p[2]:.3f})")
-
+                lbl_coord = coord_grid_layout.itemAtPosition(3, 2).widget()
+                lbl_coord.setText(f"({self.current_pos[0]:.3f}, {self.current_pos[1]:.3f}, {self.current_pos[2]:.3f})")
                 self.view.update()
 
                 if status == "exit":
@@ -480,6 +491,8 @@ class MainWindow(QWidget):
                 else:
                     self.status_value_label.setText(status)
                     self.status_value_label.setStyleSheet("color: black;")
+                    # Check waypoint progress
+                    self.check_waypoint_progress(status)
                 self.retry_button.hide()
             else:
                 self.retry_button.show()
@@ -601,7 +614,7 @@ class MainWindow(QWidget):
 
     def end_system(self):
         self.write_to_cpp(end_flag=True)
-        self.close()
+
 
     def keyPressEvent(self, event):
         key = event.key()
@@ -623,6 +636,101 @@ class MainWindow(QWidget):
             self.home_to_centroid()
         else:
             super().keyPressEvent(event)
+
+    def start_waypoint_routine(self):
+        """Start the waypoint routine - calculate 9 points around home and execute them sequentially"""
+        if self.waypoint_routine_active:
+            QMessageBox.warning(self, "Waypoint Routine", "Waypoint routine is already running!")
+            return
+
+        if self.points is None:
+            QMessageBox.warning(self, "Waypoint Routine", "Base points not available. Cannot start waypoint routine.")
+            return
+
+        # Calculate home position (centroid)
+        home = np.mean(self.points, axis=0)
+        self.waypoint_home_position = home.copy()
+
+        # Get heart frame transform
+        R, centroid = compute_heart_frame_transform(self.points)
+
+        # Define 9 waypoints in heart frame: 3x3 grid
+        # Center point (0,0,0) plus 8 surrounding points
+        step_size = 1.0  # mm in heart frame
+        waypoints_heart = [
+            np.array([-step_size, -step_size, 0]),  # Bottom-left
+            np.array([0, -step_size, 0]),           # Bottom-center
+            np.array([step_size, -step_size, 0]),   # Bottom-right
+            np.array([-step_size, 0, 0]),           # Middle-left
+            np.array([0, 0, 0]),                    # Center (home)
+            np.array([step_size, 0, 0]),            # Middle-right
+            np.array([-step_size, step_size, 0]),   # Top-left
+            np.array([0, step_size, 0]),            # Top-center
+            np.array([step_size, step_size, 0]),    # Top-right
+        ]
+
+        # Transform waypoints to global frame
+        self.waypoint_queue = []
+        for wp_heart in waypoints_heart:
+            wp_global = centroid + R @ wp_heart
+            # Validate the position
+            if not validate_position(wp_global, self.points):
+                QMessageBox.warning(
+                    self,
+                    "Waypoint Routine",
+                    f"Waypoint at heart frame {wp_heart} (global {wp_global}) is outside bounds.\n"
+                    "Waypoint routine aborted. Try reducing step size."
+                )
+                return
+            self.waypoint_queue.append(wp_global)
+
+        # Add final return to home
+        self.waypoint_queue.append(home.copy())
+
+        # Start the routine
+        self.waypoint_routine_active = True
+        self.waypoint_waiting_for_ready = False
+        self.waypoint_button.setEnabled(False)
+        self.waypoint_button.setText(f"Running ({len(self.waypoint_queue)} waypoints)...")
+
+        # Execute first waypoint immediately
+        self.execute_next_waypoint()
+
+    def execute_next_waypoint(self):
+        """Execute the next waypoint in the queue"""
+        if not self.waypoint_queue:
+            # Routine complete
+            self.waypoint_routine_active = False
+            self.waypoint_button.setEnabled(True)
+            self.waypoint_button.setText("Waypoint Routine")
+            QMessageBox.information(self, "Waypoint Routine", "Waypoint routine completed!")
+            return
+
+        # Get next waypoint
+        next_waypoint = self.waypoint_queue.pop(0)
+        self.target_pos = next_waypoint.copy()
+        self._data_changed = True
+        self.update_inputs_from_target()
+        self.update_labels()
+
+        # Send command to C++
+        self.write_to_cpp()
+
+        # Update button text with remaining waypoints
+        remaining = len(self.waypoint_queue)
+        self.waypoint_button.setText(f"Running ({remaining} remaining)...")
+
+        # Set flag to wait for READY state before next waypoint
+        self.waypoint_waiting_for_ready = True
+
+    def check_waypoint_progress(self, status):
+        """Check if system is ready for next waypoint"""
+        if self.waypoint_routine_active and self.waypoint_waiting_for_ready:
+            # Check if system has returned to READY state
+            if status == "ready":
+                self.waypoint_waiting_for_ready = False
+                # Small delay before executing next waypoint
+                QTimer.singleShot(500, self.execute_next_waypoint)
 
     def closeEvent(self, event):
         if self.read_shm:

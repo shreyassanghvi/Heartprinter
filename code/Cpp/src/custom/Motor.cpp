@@ -125,17 +125,24 @@ bool Motor::setMotorDestination(dynamixel::GroupSyncWrite *groupSyncWrite, doubl
     return true;
 }
 
-uint32_t Motor::checkAndGetPresentPosition(dynamixel::GroupSyncRead *groupSyncRead) {
+uint32_t Motor::checkAndGetPresentPosition(dynamixel::PacketHandler *packetHandler, dynamixel::PortHandler *portHandler, dynamixel::GroupSyncRead *groupSyncRead) {
+    groupSyncRead->clearParam();
     groupSyncRead->addParam(this->getMotorID());
 
-    int dxl_comm_result = groupSyncRead->txRxPacket();
+    bool error = true;
+    int dxl_comm_result = 0;
     uint8_t dxl_error = 0;
-    if (dxl_comm_result != COMM_SUCCESS) {
-        spdlog::debug("dxl_comm_result: {}", dxl_comm_result);
-        if (groupSyncRead->getError(this->getMotorID(), &dxl_error)) {
-            spdlog::debug("dxl_error: {}", dxl_error);
-            // spdlog::error("[ID:{:3d}] {}\n", this->getMotorID(),
-            //               packetHandler->getRxPacketError(dxl_error));
+    while (error) {
+        dxl_comm_result = groupSyncRead->txRxPacket();
+        dxl_error = 0;
+        if (dxl_comm_result != COMM_SUCCESS) {
+            spdlog::error("dxl_comm_result: {}", dxl_comm_result);
+            if (groupSyncRead->getError(this->getMotorID(), &dxl_error)) {
+                spdlog::error("dxl_error: {}", dxl_error);
+                spdlog::error("ID {}: {}", this->getMotorID(), packetHandler->getRxPacketError(dxl_error));
+            }
+        } else {
+            error = false;
         }
     }
 
@@ -143,12 +150,12 @@ uint32_t Motor::checkAndGetPresentPosition(dynamixel::GroupSyncRead *groupSyncRe
 
     if (groupSyncRead->
         isAvailable(this->getMotorID(), ADDR_PRESENT_POSITION, LEN_PRESENT_POSITION) != true) {
-        spdlog::debug("[ID:{:3d}] groupSyncRead getdata failed", this->getMotorID());
+        spdlog::error("[ID:{:3d}] groupSyncRead getdata failed", this->getMotorID());
         return EXIT_FAILURE;
     }
     this->motor.DXL_PRESENT_POSITION_VALUE = groupSyncRead->getData(this->getMotorID(), ADDR_PRESENT_POSITION,
                                                                     LEN_PRESENT_POSITION);
-    // groupSyncRead->clearParam();
+    groupSyncRead->clearParam();
     return this->motor.DXL_PRESENT_POSITION_VALUE;
 }
 
@@ -202,7 +209,7 @@ int Motor::setVelocityProfile(dynamixel::PacketHandler *packetHandler, dynamixel
     } else if (dxl_error != 0) {
         spdlog::error("{}", packetHandler->getRxPacketError(dxl_error));
     } else {
-        spdlog::info("Dynamixel#{} Velocity limit set to {} units ({:.2f} RPM)",
+        spdlog::info("Dynamixel#{} Velocity profile set to {} units ({:.2f} RPM)",
                      this->getMotorID(), velocityProfile, velocityProfile * 0.229);
     }
     return dxl_error;
