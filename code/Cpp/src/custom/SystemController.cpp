@@ -645,7 +645,6 @@ bool SystemController::getDAQChannelAverages(double averages[3]) const {
         return false;  // No data available yet
     }
 
-    // TODO: we should set daqDataAvailable to false so that we can wait for new daq data
     try {
         std::lock_guard<std::mutex> lock(daqDataMutex);
         for (int i = 0; i < 3; i++) {
@@ -861,7 +860,6 @@ bool SystemController::readMotorPositions() {
 // Adjust motor positions based on load cell readings to maintain safe tension
 bool SystemController::adjustTensionBasedOnLoadCells() {
     double channelAverages[3];
-    // TODO: Wait until we get DAQ data.
     if (!getDAQChannelAverages(channelAverages)) {
         spdlog::warn("Cannot adjust tension - DAQ data not available");
         return false;
@@ -1150,13 +1148,11 @@ bool SystemController::currentCloseToDesired() {
     spdlog::info("Error vector magnitude: {:.3f}", posErrorVector);
 
     // If we're somehow very close to the desiredPosition (probably when we're near the bases) go to RUNNING
-	// TODO: Make this configurable
-	const double posErrorThreshold = 1.5;
-    if (posErrorVector < posErrorThreshold) {
+    if (posErrorVector < config.posErrorThreshold) {
         return true;
     }
 
-	spdlog::warn("Error vector magnitude {} > {} Error Threshold", posErrorVector, angleThreshold);
+	spdlog::warn("Error vector magnitude {} > {} Error Threshold", posErrorVector, config.posErrorThreshold);
 
     // Calculate plane
     double a1 = staticBasePositions[1].x - staticBasePositions[0].x;
@@ -1175,7 +1171,7 @@ bool SystemController::currentCloseToDesired() {
     // Calculate angle between vector and plane normal
     // If vector is perpendicular to plane, it should be parallel to normal (angle near 0 or 180)
     double dotProduct = dx*a + dy*b + dz*c;
-    double cosAngle = std::max(-1.0, std::min(1.0, dotProduct / (posError * normalMagnitude)));
+    double cosAngle = std::max(-1.0, std::min(1.0, dotProduct / (posErrorVector * normalMagnitude)));
     spdlog::info("Dot product: {:.3f}, cosAngle: {:.3f}", dotProduct, cosAngle);
 
     // angleToNormal is angle between vector and normal
@@ -1183,8 +1179,6 @@ bool SystemController::currentCloseToDesired() {
     spdlog::info("Angle to plane normal: {:.1f} deg", angleToNormal);
 
     // We want vector perpendicular to plane (parallel to normal), so angleToNormal should be near 0
-    // TODO: Make this configurable
-    const double angleThreshold = 7.0;
-	spdlog::warn("angleToNormal: {:.1f} deg, {:.1f} deg threshold)", angleToNormal, angleThreshold);
-	return angleToNormal <= angleThreshold;
+	spdlog::warn("angleToNormal: {:.1f} deg, {:.1f} deg threshold)", angleToNormal, config.angleThreshold);
+	return angleToNormal <= config.angleThreshold;
 }

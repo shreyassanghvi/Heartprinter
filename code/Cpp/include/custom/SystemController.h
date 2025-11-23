@@ -81,6 +81,10 @@ struct SystemConfig {
     int calibrationStabilityReads = 10;      // Number of consistent reads to detect base arrival
     double calibrationPositionTolerance = 5.0; // Position tolerance in motor units for stability detection
     int calibrationMovementSteps = 100;     // Number of motor steps to move during calibration base detection
+
+    // Position control configuration
+    double posErrorThreshold = 1.5;         // Position error threshold (mm) - transition to RUNNING when below this
+    double angleThreshold = 7.0;            // Angle threshold (degrees) - max angle between error vector and plane normal
 };
 
 // System status
