@@ -332,9 +332,8 @@ void SystemController::run() {
         spdlog::info("Starting main control loop...");
 
         // Main control loop - using StateController pattern
-        // Only should go into this when RUNNING or MOVING.
-		// TODO: Add a TENSION state here.
-        while ((currentState == States::RUNNING || currentState == States::MOVING)) {
+        // Only should go into this when RUNNING, MOVING, or TENSION.
+        while ((currentState == States::RUNNING || currentState == States::MOVING || currentState == States::TENSION)) {
             // Process state transitions
             States newState = processStateTransition(currentState);
             if (newState != currentState) {
@@ -345,8 +344,7 @@ void SystemController::run() {
             }
 
             // Break if we're no longer in a valid running state
-			// TODO: Add TENSION state here
-            if (currentState != States::RUNNING && currentState != States::MOVING) {
+            if (currentState != States::RUNNING && currentState != States::MOVING && currentState != States::TENSION) {
                 break;
             }
 
@@ -383,11 +381,8 @@ void SystemController::run() {
 					validateMotorCommand(sharedCmd);
 				}
             }
-            // If we are in the MOVING state, just continue
-            
-            // The state transition logic will handle moving to MOVING state
-            // if motors haven't reached their targets yet
-            
+            // If we are in the MOVING/TENSION state, just continue
+
             // Small delay to prevent tight loop
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
@@ -404,7 +399,6 @@ void SystemController::run() {
 // Process state transitions with proper error handling
 States SystemController::processStateTransition(States current) {
     switch (current) {
-        // TODO: Add new TENSIONING state
         case States::START:
             return States::INITIALIZING;
 
@@ -447,9 +441,7 @@ States SystemController::processStateTransition(States current) {
             calculateCentroid();
             desiredPosition = centroidPosition;
 
-			// TODO: Maybe we just set the desiredPosition here, and then move to the READY state and have
-			// 	the rest of the control loop move us?
-			// 	We are already essentially doing that, we're just issuing the movement command in here instead.
+            // Write desired position to shared memory for GUI visibility
             MotorCommand sharedCmd;
             sharedCmd.execute = false;
             sharedCmd.target_x = desiredPosition.x;
@@ -457,15 +449,10 @@ States SystemController::processStateTransition(States current) {
             sharedCmd.target_z = desiredPosition.z;
             sharedMemory->writeMotorCommand(sharedCmd);
 
-            // Move to centroid position
-            setMotorDestinationsForTarget(desiredPosition);
-            spdlog::info("Motor Destinations: {}, {}, {}", motorDestinations[0], motorDestinations[1], motorDestinations[2]);
+            spdlog::info("Calibration complete - desired position set to centroid ({:.2f}, {:.2f}, {:.2f})",
+                        desiredPosition.x, desiredPosition.y, desiredPosition.z);
+            spdlog::info("Movement to centroid will be handled by READY->RUNNING->MOVING states");
 
-            spdlog::info("Moving to centroid position...");
-            if (!moveMotorPositions()) {
-                spdlog::info("Failed to move motors.");
-                return States::ERR;
-            }
             return States::READY;
 
         case States::READY:
@@ -476,19 +463,11 @@ States SystemController::processStateTransition(States current) {
             if (!readMotorPositions()) {
                 return States::MOVING;
             }
+
             // Check for safety conditions
             if (!performSafetyCheck(currentPosition)) {
-				// TODO: This should move us to the TENSION state
                 spdlog::warn("Safety check failed - tension outside of normal bounds.");
-
-                // Attempt to adjust motor positions to correct tension
-                if (!adjustTensionBasedOnLoadCells()) {
-                    spdlog::error("Failed to adjust tension - entering error state");
-                    return States::ERR;
-                }
-
-                // After adjustment, transition to MOVING state to let motors reach new positions
-                return States::MOVING;
+                return States::TENSION;
             }
 
 			// If we're not close to our desiredPosition, then we need to start moving towards it.
@@ -522,6 +501,29 @@ States SystemController::processStateTransition(States current) {
                 return States::RUNNING;
             }
             return States::MOVING;
+
+        case States::TENSION:
+            // First time we enter here, we should skip over.
+            // Wait for motors to reach positions
+            if (!readMotorPositions()) {
+                return States::TENSION;
+            }
+
+            // First time we enter here, we should skip over.
+            // Check if tension is now acceptable
+            if (performSafetyCheck(currentPosition)) {
+                spdlog::info("Tension adjustment complete - returning to RUNNING");
+                return States::RUNNING;
+            }
+
+            // Perform tension adjustment
+            if (!adjustTensionBasedOnLoadCells()) {
+                spdlog::error("Failed to adjust tension - entering error state");
+                return States::ERR;
+            }
+
+            // Still out of bounds, adjust again
+            return States::TENSION;
 
         case States::ERR:
             return States::CLEANUP;
@@ -721,6 +723,7 @@ std::string SystemController::currentStateToString() const {
         case States::READY: return "READY";
         case States::RUNNING: return "RUN";
         case States::MOVING: return "MOVE";
+        case States::TENSION: return "TENSE";
         case States::ERR: return "ERR";
         case States::END: return "END";
         case States::CLEANUP: return "CLEAN";
