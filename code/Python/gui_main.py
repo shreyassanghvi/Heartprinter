@@ -665,14 +665,14 @@ class MainWindow(QWidget):
 
         # A. For each static base (Left, Center, Right)
         for i, base_point in enumerate(self.points):
-            # Direction from home to base
-            direction = base_point - home
+            # Direction from base to home
+            direction = home - base_point
             direction_norm = np.linalg.norm(direction)
 
             if direction_norm > 0:
-                # Normalize direction and move 1mm toward the base
+                # Normalize direction and position 1mm away from the base (toward home)
                 direction_unit = direction / direction_norm
-                near_base = home + direction_unit * proximity_distance
+                near_base = base_point + direction_unit * proximity_distance
 
                 # Validate the near_base position
                 if not validate_position(near_base, self.points):
@@ -696,14 +696,14 @@ class MainWindow(QWidget):
             # Calculate midpoint between two bases
             midpoint = (self.points[idx1] + self.points[idx2]) / 2.0
 
-            # Direction from home to midpoint
-            direction = midpoint - home
+            # Direction from midpoint to home
+            direction = home - midpoint
             direction_norm = np.linalg.norm(direction)
 
             if direction_norm > 0:
-                # Normalize direction and move 1mm toward the midpoint
+                # Normalize direction and position 1mm away from the midpoint (toward home)
                 direction_unit = direction / direction_norm
-                near_midpoint = home + direction_unit * proximity_distance
+                near_midpoint = midpoint + direction_unit * proximity_distance
 
                 # Validate the near_midpoint position
                 if not validate_position(near_midpoint, self.points):
