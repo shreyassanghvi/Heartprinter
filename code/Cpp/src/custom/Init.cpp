@@ -17,6 +17,7 @@
 #include <chrono>
 #include <sstream>
 #include <iostream>
+#include <signal.h>
 
 #include <windows.h>
 #include <stdio.h>
@@ -26,6 +27,20 @@ namespace fs = std::filesystem;
 //user defined #define
 #define RECORD_CNT                          10000                 // Number of records to collect
 #define MOTOR_CNT                           3                  // Number of motors to control
+
+// Global pointer to SystemController for signal handler
+static SystemController* g_systemControllerForSignal = nullptr;
+
+// Signal handler for Ctrl+C (SIGINT)
+void signalHandler(int signal) {
+    if (signal == SIGINT) {
+        spdlog::warn("SIGINT received (Ctrl+C) - initiating graceful shutdown...");
+        if (g_systemControllerForSignal) {
+            g_systemControllerForSignal->shutdown();
+        }
+        exit(0);
+    }
+}
 
 bool getUserConfirmation(const std::string& prompt) {
     std::string input;
@@ -137,7 +152,9 @@ int main(int argc, char *argv[]) {
     auto logger = create_dated_logger(true);
     spdlog::info("Heart Printer System starting...");
 
-    // TODO: We need to catch SIGINT and send system to the CLEANUP state
+    // Set up signal handler for graceful shutdown on Ctrl+C
+    signal(SIGINT, signalHandler);
+
     try {
         spdlog::info("Setting up config");
         // Create system configuration
@@ -159,7 +176,10 @@ int main(int argc, char *argv[]) {
         // Create and initialize system controller
         spdlog::info("Construct systemcontroller");
         SystemController systemController(config);
-        
+
+        // Set global pointer for signal handler
+        g_systemControllerForSignal = &systemController;
+
         spdlog::info("Initializing system...");
         if (!systemController.initialize()) {
             spdlog::error("Failed to initialize system: {}", systemController.getLastError());
@@ -170,19 +190,25 @@ int main(int argc, char *argv[]) {
         
         // Run the main control loop
         systemController.run();
-        
+
+        // Clear global pointer before destruction
+        g_systemControllerForSignal = nullptr;
+
         // System will shut down automatically via RAII destructor
         spdlog::info("System execution completed");
         return EXIT_SUCCESS;
         
     } catch (const SystemException& e) {
-        spdlog::error("System exception: [{}] {}", 
+        g_systemControllerForSignal = nullptr;
+        spdlog::error("System exception: [{}] {}",
                      static_cast<int>(e.getErrorCode()), e.what());
         return EXIT_FAILURE;
     } catch (const std::exception& e) {
+        g_systemControllerForSignal = nullptr;
         spdlog::error("Unexpected exception: {}", e.what());
         return EXIT_FAILURE;
     } catch (...) {
+        g_systemControllerForSignal = nullptr;
         spdlog::error("Unknown exception occurred");
         return EXIT_FAILURE;
     }
