@@ -164,8 +164,10 @@ int main(int argc, char *argv[]) {
         config.enableSafetyChecks = true;
         config.maxLoadVoltage = -0.02;
         config.minLoadVoltage = -0.05;
-        config.tensionAdjustmentSteps = 25;
+        config.tensionAdjustmentSteps = 50;
         config.trackingDeadband = 300.0;
+        config.posErrorThreshold = 1.5;
+        config.angleThreshold = 7.0;
 
         // Run pre-initialization checklist
         if (!runPreInitializationChecklist()) {

@@ -136,7 +136,7 @@ bool SystemController::initializeDAQ() {
         analogConf.channel = "ai0:2";
         analogConf.minVoltage = -10;
         analogConf.maxVoltage = 10;
-        analogConf.sampleRate = 1000.0;
+        analogConf.sampleRate = 10000.0;
         analogConf.samplesPerCallback = 1000;
 
         // Create DAQ system
@@ -258,6 +258,10 @@ bool SystemController::initializeMotors() {
                 spdlog::error("Failed to set velocity profile for motor {}", i);
                 return false;
             }
+            // TODO: We should set motorDestination == current motor position
+
+            motorDestinations[i] = motors.back().checkAndGetPresentPosition(packetHandler, portHandler, &groupSyncRead);
+
         }
 
         // for (int calCycle = 0; calCycle< 1; calCycle++) {
@@ -447,6 +451,7 @@ States SystemController::processStateTransition(States current) {
             sharedCmd.target_x = desiredPosition.x;
             sharedCmd.target_y = desiredPosition.y;
             sharedCmd.target_z = desiredPosition.z;
+            sharedCmd.exit = false;
             sharedMemory->writeMotorCommand(sharedCmd);
 
             spdlog::info("Calibration complete - desired position set to centroid ({:.2f}, {:.2f}, {:.2f})",
@@ -498,6 +503,13 @@ States SystemController::processStateTransition(States current) {
         			}
 					return States::MOVING;
 				}
+
+                // Check for safety conditions
+                if (!performSafetyCheck(currentPosition)) {
+                    spdlog::warn("Safety check failed - tension outside of normal bounds.");
+                    return States::TENSION;
+                }
+
                 return States::RUNNING;
             }
             return States::MOVING;

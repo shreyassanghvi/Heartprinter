@@ -27,7 +27,7 @@
 #define DXL_MAXIMUM_POSITION_VALUE 4095
 
 #define ADDR_VELOCITY_PROFILE        112
-#define DXL_VELOCITY_PROFILE_VALUE   100  // ~5 RPM (unit: 0.229 rpm)
+#define DXL_VELOCITY_PROFILE_VALUE   375  // ~5 RPM (unit: 0.229 rpm)
 
 struct DynamixelMotor {
     int DXL_ID;
@@ -70,7 +70,7 @@ private:
     // Add private members as needed
     DynamixelMotor motor{};
 
-    double pulley_diameter_mm = 30.0;
+    double pulley_diameter_mm = 7.5;
 };
 
 #endif //MOTOR_H

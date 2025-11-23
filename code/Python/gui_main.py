@@ -661,7 +661,8 @@ class MainWindow(QWidget):
         #       2. Move back to home position
 
         self.waypoint_queue = [home.copy()]
-        proximity_distance = 1.0  # mm - how close to move toward each target
+        base_proximity_distance = 20.0
+        midpoint_proximity_distance = 10.0
 
         # A. For each static base (Left, Center, Right)
         for i, base_point in enumerate(self.points):
@@ -672,7 +673,7 @@ class MainWindow(QWidget):
             if direction_norm > 0:
                 # Normalize direction and position 1mm away from the base (toward home)
                 direction_unit = direction / direction_norm
-                near_base = base_point + direction_unit * proximity_distance
+                near_base = base_point + direction_unit * base_proximity_distance
 
                 # Validate the near_base position
                 if not validate_position(near_base, self.points):
@@ -703,7 +704,7 @@ class MainWindow(QWidget):
             if direction_norm > 0:
                 # Normalize direction and position 1mm away from the midpoint (toward home)
                 direction_unit = direction / direction_norm
-                near_midpoint = midpoint + direction_unit * proximity_distance
+                near_midpoint = midpoint + direction_unit * midpoint_proximity_distance
 
                 # Validate the near_midpoint position
                 if not validate_position(near_midpoint, self.points):
@@ -762,7 +763,7 @@ class MainWindow(QWidget):
         """Check if system is ready for next waypoint"""
         if self.waypoint_routine_active and self.waypoint_waiting_for_ready:
             # Check if system has returned to RUNNING state
-            if status == "run":
+            if status.lower() == "run":
                 self.waypoint_waiting_for_ready = False
                 # Small delay before executing next waypoint
                 QTimer.singleShot(500, self.execute_next_waypoint)
