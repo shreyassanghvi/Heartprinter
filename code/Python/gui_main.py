@@ -651,51 +651,75 @@ class MainWindow(QWidget):
         home = np.mean(self.points, axis=0)
         self.waypoint_home_position = home.copy()
 
-        # TODO: Update waypoint routine to do this:
-        #   A. For each static base:
-        #       1. Move to home position
-        #       2. Move close (~1mm) to a base
-        #       3. Move back to home position
-        #   B. For the midpoint between each static base:
-        #       1. Move to home position
-        #       2. Move close to the midpoint
-        #       3. Move back to home position
+        # Waypoint routine:
+        #   A. Move to home position
+        #   B. For each static base:
+        #       1. Move close (~1mm) to the base
+        #       2. Move back to home position
+        #   C. For the midpoint between each pair of static bases:
+        #       1. Move close to the midpoint
+        #       2. Move back to home position
 
+        self.waypoint_queue = [home.copy()]
+        proximity_distance = 1.0  # mm - how close to move toward each target
 
-        # Get heart frame transform
-        R, centroid = compute_heart_frame_transform(self.points)
+        # A. For each static base (Left, Center, Right)
+        for i, base_point in enumerate(self.points):
+            # Direction from home to base
+            direction = base_point - home
+            direction_norm = np.linalg.norm(direction)
 
-        # Define 9 waypoints in heart frame: 3x3 grid
-        # Center point (0,0,0) plus 8 surrounding points
-        step_size = 1.0  # mm in heart frame
-        waypoints_heart = [
-            np.array([-step_size, -step_size, 0]),  # Bottom-left
-            np.array([0, -step_size, 0]),           # Bottom-center
-            np.array([step_size, -step_size, 0]),   # Bottom-right
-            np.array([-step_size, 0, 0]),           # Middle-left
-            np.array([0, 0, 0]),                    # Center (home)
-            np.array([step_size, 0, 0]),            # Middle-right
-            np.array([-step_size, step_size, 0]),   # Top-left
-            np.array([0, step_size, 0]),            # Top-center
-            np.array([step_size, step_size, 0]),    # Top-right
-        ]
+            if direction_norm > 0:
+                # Normalize direction and move 1mm toward the base
+                direction_unit = direction / direction_norm
+                near_base = home + direction_unit * proximity_distance
 
-        # Transform waypoints to global frame
-        self.waypoint_queue = []
-        for wp_heart in waypoints_heart:
-            wp_global = centroid + R @ wp_heart
-            # Validate the position
-            if not validate_position(wp_global, self.points):
-                QMessageBox.warning(
-                    self,
-                    "Waypoint Routine",
-                    f"Waypoint at heart frame {wp_heart} (global {wp_global}) is outside bounds.\n"
-                    "Waypoint routine aborted. Try reducing step size."
-                )
-                return
-            self.waypoint_queue.append(wp_global)
+                # Validate the near_base position
+                if not validate_position(near_base, self.points):
+                    QMessageBox.warning(
+                        self,
+                        "Waypoint Routine",
+                        f"Position near base {i} is outside bounds.\n"
+                        "Waypoint routine aborted. Try reducing proximity distance."
+                    )
+                    return
 
-        # Add final return to home
+                # Add sequence: near_base -> home
+                self.waypoint_queue.append(near_base)
+                self.waypoint_queue.append(home.copy())
+
+        # B. For each midpoint between bases
+        # Midpoint pairs: (0,1), (1,2), (2,0) for Left-Center, Center-Right, Right-Left
+        base_pairs = [(0, 1), (1, 2), (2, 0)]
+
+        for idx1, idx2 in base_pairs:
+            # Calculate midpoint between two bases
+            midpoint = (self.points[idx1] + self.points[idx2]) / 2.0
+
+            # Direction from home to midpoint
+            direction = midpoint - home
+            direction_norm = np.linalg.norm(direction)
+
+            if direction_norm > 0:
+                # Normalize direction and move 1mm toward the midpoint
+                direction_unit = direction / direction_norm
+                near_midpoint = home + direction_unit * proximity_distance
+
+                # Validate the near_midpoint position
+                if not validate_position(near_midpoint, self.points):
+                    QMessageBox.warning(
+                        self,
+                        "Waypoint Routine",
+                        f"Position near midpoint of bases {idx1}-{idx2} is outside bounds.\n"
+                        "Waypoint routine aborted. Try reducing proximity distance."
+                    )
+                    return
+
+                # Add sequence: near_midpoint -> home
+                self.waypoint_queue.append(near_midpoint)
+                self.waypoint_queue.append(home.copy())
+
+        # Add final return to home to ensure we end at home
         self.waypoint_queue.append(home.copy())
 
         # Start the routine
@@ -737,8 +761,8 @@ class MainWindow(QWidget):
     def check_waypoint_progress(self, status):
         """Check if system is ready for next waypoint"""
         if self.waypoint_routine_active and self.waypoint_waiting_for_ready:
-            # Check if system has returned to READY state
-            if status == "ready":
+            # Check if system has returned to RUNNING state
+            if status == "run":
                 self.waypoint_waiting_for_ready = False
                 # Small delay before executing next waypoint
                 QTimer.singleShot(500, self.execute_next_waypoint)

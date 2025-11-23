@@ -36,7 +36,7 @@ enum class States {
     READY,
     RUNNING,
     MOVING,
-    TENSION,      // Dedicated state for tension adjustment
+    TENSION,
     ERR,
     END,
     CLEANUP
