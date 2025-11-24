@@ -6,9 +6,27 @@ import glob
 import os
 import csv
 
-def analyze_heart_printer_logs(log_content):
+def is_valid_log_file(file_path):
+    """
+    Check if file is a valid Heart Printer log file
+    """
+    try:
+        with open(file_path, 'r') as f:
+            # Read first few lines to check for log initialization marker
+            for i, line in enumerate(f):
+                if i > 10:  # Only check first 10 lines
+                    break
+                if 'Logger initialized with both file and console sinks' in line:
+                    return True
+        return False
+    except Exception as e:
+        print(f"Error checking file {file_path}: {e}")
+        return False
+
+def analyze_heart_printer_logs(log_content, log_file_path=None):
     """
     Analyze Heart Printer System logs and provide a comprehensive summary
+    Returns both the report text and the summary data structure for CSV generation
     """
     lines = log_content.strip().split('\n')
 
@@ -50,6 +68,7 @@ def analyze_heart_printer_logs(log_content):
     error_threshold_pattern = r'Error vector magnitude ([\d.]+) > ([\d.]+) Error Threshold'
     no_adjustment_pattern = r'No tension adjustment needed'
     status_state_pattern = r'- (CALIB|RUN|MOVING|READY)'
+    state_transition_pattern = r'(\w+)\s*->\s*(\w+)'  # Matches "STATE1 -> STATE2"
 
     # Track previous adjustment data for timing analysis
     prev_adjustment = {
@@ -61,13 +80,14 @@ def analyze_heart_printer_logs(log_content):
     # Track state indicators - look back context
     recent_not_close_warnings = {}  # motor_num -> timestamp of last "not close" warning
     recent_stable_indicators = {}   # motor_num -> timestamp of last "stable" indicator
-    current_system_state = None
+    current_system_state = 'UNKNOWN'  # Initialize with UNKNOWN
     error_threshold_exceeded = False
     system_is_stable = False
 
     # Track last error vector magnitude to categorize it
     last_error_magnitude = None
     last_error_timestamp = None
+    last_error_state = 'UNKNOWN'
 
     # Parse each line
     for line in lines:
@@ -92,6 +112,12 @@ def analyze_heart_printer_logs(log_content):
             # Count log levels
             summary['performance_metrics'][f'log_level_{level}'] += 1
 
+            # Detect state transitions (e.g., "MOVE -> TENSE")
+            transition_match = re.search(state_transition_pattern, message)
+            if transition_match:
+                # Update to the new state (second state in transition)
+                current_system_state = transition_match.group(2)
+
             # Detect system state from status updates
             state_match = re.search(status_state_pattern, message)
             if state_match:
@@ -105,7 +131,8 @@ def analyze_heart_printer_logs(log_content):
                     summary['cartesian_errors']['below_threshold'].append({
                         'timestamp': last_error_timestamp,
                         'magnitude': last_error_magnitude,
-                        'threshold': 1.5
+                        'threshold': 1.5,
+                        'state': last_error_state
                     })
 
                 # Extract the new magnitude value (this is the actual Cartesian error in mm)
@@ -114,6 +141,7 @@ def analyze_heart_printer_logs(log_content):
                     mag_value = float(mag_match.group(1))
                     last_error_magnitude = mag_value
                     last_error_timestamp = current_time
+                    last_error_state = current_system_state  # Store current state with error
                     # If magnitude is small (<= 1.5), consider position acceptable
                     if mag_value <= 1.5:
                         error_threshold_exceeded = False
@@ -133,7 +161,8 @@ def analyze_heart_printer_logs(log_content):
                         summary['cartesian_errors']['above_threshold'].append({
                             'timestamp': last_error_timestamp,
                             'magnitude': last_error_magnitude,
-                            'threshold': threshold
+                            'threshold': threshold,
+                            'state': last_error_state
                         })
                         last_error_magnitude = None
                 else:
@@ -142,7 +171,8 @@ def analyze_heart_printer_logs(log_content):
                         summary['cartesian_errors']['below_threshold'].append({
                             'timestamp': last_error_timestamp,
                             'magnitude': last_error_magnitude,
-                            'threshold': threshold
+                            'threshold': threshold,
+                            'state': last_error_state
                         })
                         last_error_magnitude = None
 
@@ -244,7 +274,10 @@ def analyze_heart_printer_logs(log_content):
                 error_type = classify_error(message)
                 summary['errors_warnings'][error_type] += 1
 
-    return generate_report(summary)
+    # Store log file path in summary for CSV generation
+    summary['log_file_path'] = log_file_path if log_file_path else 'unknown'
+
+    return generate_report(summary), summary
 
 def extract_component(message):
     """Extract hardware component from initialization message"""
@@ -525,18 +558,141 @@ def generate_report(summary):
 
     return "\n".join(report)
 
+def generate_csv_from_summaries(summaries, output_csv_path):
+    """
+    Generate a CSV file with all positional errors from multiple log analyses
+    """
+    csv_rows = []
+
+    for summary in summaries:
+        log_file = summary.get('log_file_path', 'unknown')
+
+        # Process above threshold errors (rejected)
+        for error_data in summary['cartesian_errors']['above_threshold']:
+            timestamp_str = error_data['timestamp']
+            try:
+                dt = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S.%f')
+                unix_time = int(dt.timestamp())
+            except:
+                unix_time = 0
+
+            csv_rows.append({
+                'log_file': os.path.basename(log_file),
+                'unix_timestamp': unix_time,
+                'datetime': timestamp_str,
+                'magnitude_mm': error_data['magnitude'],
+                'threshold_mm': error_data.get('threshold', 1.5),
+                'status': 'rejected',
+                'state': error_data.get('state', 'UNKNOWN')
+            })
+
+        # Process below threshold errors (accepted)
+        for error_data in summary['cartesian_errors']['below_threshold']:
+            timestamp_str = error_data['timestamp']
+            try:
+                dt = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S.%f')
+                unix_time = int(dt.timestamp())
+            except:
+                unix_time = 0
+
+            csv_rows.append({
+                'log_file': os.path.basename(log_file),
+                'unix_timestamp': unix_time,
+                'datetime': timestamp_str,
+                'magnitude_mm': error_data['magnitude'],
+                'threshold_mm': error_data.get('threshold', 1.5),
+                'status': 'accepted',
+                'state': error_data.get('state', 'UNKNOWN')
+            })
+
+    # Sort by unix timestamp
+    csv_rows.sort(key=lambda x: x['unix_timestamp'])
+
+    # Write CSV
+    with open(output_csv_path, 'w', newline='') as csvfile:
+        fieldnames = ['log_file', 'unix_timestamp', 'datetime', 'magnitude_mm', 'threshold_mm', 'status', 'state']
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+
+        writer.writeheader()
+        for row in csv_rows:
+            writer.writerow(row)
+
+    print(f"CSV file generated: {output_csv_path}")
+    print(f"Total positional errors recorded: {len(csv_rows)}")
+
 # Example usage with your log file:
 if __name__ == "__main__":
-    # Read the log file
-    if(len(sys.argv) > 1):
-        log_file = sys.argv[1]
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Analyze Heart Printer log files')
+    parser.add_argument('log_path', help='Path or glob pattern to log file(s) (e.g., "logs/*.txt")')
+    parser.add_argument('-o', '--output-dir', default=None,
+                        help='Output directory for analysis files (default: ./analysis)')
+
+    args = parser.parse_args()
+
+    # Determine output directory
+    if args.output_dir:
+        output_dir = args.output_dir
     else:
-        print("Missing log path.")
-        exit(0)
+        output_dir = os.path.join(os.getcwd(), 'analysis')
 
-    with open(log_file, 'r') as file:
-        log_content = file.read()
+    # Create output directory if it doesn't exist
+    os.makedirs(output_dir, exist_ok=True)
+    print(f"Output directory: {output_dir}")
 
-    # Analyze and print summary
-    summary_report = analyze_heart_printer_logs(log_content)
-    print(summary_report)
+    # Find all matching log files
+    log_files = glob.glob(args.log_path)
+
+    if not log_files:
+        print(f"No log files found matching pattern: {args.log_path}")
+        sys.exit(1)
+
+    print(f"Found {len(log_files)} file(s) to process")
+
+    # Process each log file
+    all_summaries = []
+    processed_count = 0
+
+    for log_file in log_files:
+        print(f"\nProcessing: {log_file}")
+
+        # Validate log file
+        if not is_valid_log_file(log_file):
+            print(f"  ⚠️  Skipping - not a valid Heart Printer log file")
+            continue
+
+        try:
+            # Read log file
+            with open(log_file, 'r') as f:
+                log_content = f.read()
+
+            # Analyze log
+            report, summary = analyze_heart_printer_logs(log_content, log_file)
+            all_summaries.append(summary)
+
+            # Generate output filename
+            log_basename = os.path.splitext(os.path.basename(log_file))[0]
+            output_file = os.path.join(output_dir, f"{log_basename}_analysis.txt")
+
+            # Write analysis report
+            with open(output_file, 'w') as f:
+                f.write(report)
+
+            print(f"  ✅ Analysis saved to: {output_file}")
+            processed_count += 1
+
+        except Exception as e:
+            print(f"  ❌ Error processing file: {e}")
+            continue
+
+    # Generate combined CSV
+    if all_summaries:
+        csv_output_path = os.path.join(output_dir, 'positional_errors_combined.csv')
+        generate_csv_from_summaries(all_summaries, csv_output_path)
+
+    print(f"\n{'='*60}")
+    print(f"Processing complete!")
+    print(f"Files processed: {processed_count}/{len(log_files)}")
+    print(f"Output directory: {output_dir}")
+    print(f"{'='*60}")
