@@ -17,6 +17,8 @@ from compute import (
     compute_plane_mesh, validate_position, compute_heart_frame_transform
 )
 
+import subprocess
+
 class SyncableGLViewWidget(gl.GLViewWidget):
     cameraMoved = pyqtSignal(float, float)  # azimuth, elevation
 
@@ -614,6 +616,22 @@ class MainWindow(QWidget):
 
     def end_system(self):
         self.write_to_cpp(end_flag=True)
+
+        # Run log analysis
+        try:
+            import os
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            log_analysis_script = os.path.join(script_dir, "log_analysis.py")
+            log_glob_pattern = "../Cpp/logs/log*"
+
+            subprocess.Popen([
+                sys.executable,
+                log_analysis_script,
+                log_glob_pattern
+            ])
+            print("Log analysis started in background...")
+        except Exception as e:
+            print(f"Failed to start log analysis: {e}")
 
 
     def keyPressEvent(self, event):
