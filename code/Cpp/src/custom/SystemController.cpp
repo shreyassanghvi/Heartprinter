@@ -439,11 +439,18 @@ States SystemController::processStateTransition(States current) {
 				while (!readMotorPositions()) {
 					;
 				}
+                validateProbes();
+                GetAsynchronousRecord(3, &currentPosition, sizeof(currentPosition));
+                sharedMemory->writeStatusUpdate(currentPosition, staticBasePositions, currentStateToString());
             }
 
             // Calculate centroid of the three base positions
+            validateProbes();
+            GetAsynchronousRecord(3, &currentPosition, sizeof(currentPosition));
+            sharedMemory->writeStatusUpdate(currentPosition, staticBasePositions, currentStateToString());
             calculateCentroid();
             desiredPosition = centroidPosition;
+            // desiredPosition = currentPosition;
 
             // Write desired position to shared memory for GUI visibility
             MotorCommand sharedCmd;
@@ -777,6 +784,9 @@ bool SystemController::validateMotorCommand(MotorCommand& cmd) {
     desiredPosition.y = cmd.target_y;
     desiredPosition.z = cmd.target_z;
     sharedMemory->writeMotorCommand(clearedCmd);
+
+    spdlog::info("New desired position set: ({:.3f}, {:.3f}, {:.3f})",
+        desiredPosition.x, desiredPosition.y, desiredPosition.z);
 	return true;
 }
 
@@ -884,7 +894,7 @@ bool SystemController::adjustTensionBasedOnLoadCells() {
 
     // Do full adjustment at 0.075V error
     const double Kp = config.tensionAdjustmentSteps / 0.075;
-    const int minAdjustment = 10;
+    const int minAdjustment = 5;
     const int maxAdjustment = config.tensionAdjustmentSteps * 3;
     const double midVoltage = (config.minLoadVoltage + config.maxLoadVoltage) / 2;
 
@@ -1192,8 +1202,50 @@ bool SystemController::currentCloseToDesired() {
     // angleToNormal is angle between vector and normal
     double angleToNormal = acos(std::abs(cosAngle)) * 180.0 / M_PI;
     spdlog::info("Angle to plane normal: {:.1f} deg", angleToNormal);
+    spdlog::warn("angleToNormal: {:.1f} deg, {:.1f} deg threshold)", angleToNormal, config.angleThreshold);
 
-    // We want vector perpendicular to plane (parallel to normal), so angleToNormal should be near 0
-	spdlog::warn("angleToNormal: {:.1f} deg, {:.1f} deg threshold)", angleToNormal, config.angleThreshold);
-	return angleToNormal <= config.angleThreshold;
+    if (angleToNormal <= config.angleThreshold){
+        // We want vector perpendicular to plane (parallel to normal), so angleToNormal should be near 0
+        return true;
+    }
+
+    // Project current position onto the plane defined by the three base positions
+    // Plane equation: a(x-x0) + b(y-y0) + c(z-z0) = 0, where (x0,y0,z0) is a point on the plane
+    // Distance from point to plane: d = (a*px + b*py + c*pz - D) / ||normal||
+    // where D = a*x0 + b*y0 + c*z0
+    double D = a * staticBasePositions[0].x + b * staticBasePositions[0].y + c * staticBasePositions[0].z;
+    double currentDistanceToPlane = (a * currentPosition.x + b * currentPosition.y + c * currentPosition.z - D) / normalMagnitude;
+
+    // Project current position onto plane
+    DOUBLE_POSITION_ANGLES_RECORD projectedCurrent;
+    projectedCurrent.x = currentPosition.x - (a / normalMagnitude) * currentDistanceToPlane;
+    projectedCurrent.y = currentPosition.y - (b / normalMagnitude) * currentDistanceToPlane;
+    projectedCurrent.z = currentPosition.z - (c / normalMagnitude) * currentDistanceToPlane;
+
+    spdlog::info("Projected current position onto plane: ({:.3f}, {:.3f}, {:.3f})",
+                 projectedCurrent.x, projectedCurrent.y, projectedCurrent.z);
+    spdlog::info("Distance from current to plane: {:.3f}", currentDistanceToPlane);
+
+    double desiredDistanceToPlane = (a * desiredPosition.x + b * desiredPosition.y + c * desiredPosition.z - D) / normalMagnitude;
+
+    // Project current position onto plane
+    DOUBLE_POSITION_ANGLES_RECORD projectedDesired;
+    projectedDesired.x = currentPosition.x - (a / normalMagnitude) * desiredDistanceToPlane;
+    projectedDesired.y = currentPosition.y - (b / normalMagnitude) * desiredDistanceToPlane;
+    projectedDesired.z = currentPosition.z - (c / normalMagnitude) * desiredDistanceToPlane;
+
+    spdlog::info("Projected desired position onto plane: ({:.3f}, {:.3f}, {:.3f})",
+                 projectedDesired.x, projectedDesired.y, projectedDesired.z);
+    spdlog::info("Distance from desired to plane: {:.3f}", desiredDistanceToPlane);
+
+    // Calculate in-plane distance between desired and projected current
+    double inPlane_dx = projectedDesired.x - projectedCurrent.x;
+    double inPlane_dy = projectedDesired.y - projectedCurrent.y;
+    double inPlane_dz = projectedDesired.z - projectedCurrent.z;
+    double inPlaneDistance = sqrt(pow(inPlane_dx, 2) + pow(inPlane_dy, 2) + pow(inPlane_dz, 2));
+
+    spdlog::info("In-plane distance (projected desired to projected current): {:.3f}", inPlaneDistance);
+    spdlog::info("In-plane difference vector: ({:.3f}, {:.3f}, {:.3f})", inPlane_dx, inPlane_dy, inPlane_dz);
+
+	return inPlaneDistance <= config.posErrorThreshold;
 }
