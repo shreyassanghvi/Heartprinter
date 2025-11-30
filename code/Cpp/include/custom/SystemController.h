@@ -119,6 +119,7 @@ private:
     
     // Current state
     States currentState = States::START;
+    States previousState = States::START;
     DOUBLE_POSITION_ANGLES_RECORD currentPosition = {};
     DOUBLE_POSITION_ANGLES_RECORD desiredPosition = {};
     std::string lastErrorMessage;

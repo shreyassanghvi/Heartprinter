@@ -340,6 +340,7 @@ void SystemController::run() {
         while ((currentState == States::RUNNING || currentState == States::MOVING || currentState == States::TENSION)) {
             // Process state transitions
             States newState = processStateTransition(currentState);
+            previousState = currentState;
             if (newState != currentState) {
                 std::string state_str = currentStateToString();
                 currentState = newState;
@@ -496,6 +497,12 @@ States SystemController::processStateTransition(States current) {
             return States::RUNNING;
 
         case States::MOVING:
+            // Check for safety conditions
+            if (!performSafetyCheck(currentPosition)) {
+                spdlog::warn("Safety check failed - tension outside of normal bounds.");
+                return States::TENSION;
+            }
+
             // Check if motors have reached their targets
             if (readMotorPositions()) {
                 spdlog::debug("Motors reached target positions");
@@ -510,38 +517,60 @@ States SystemController::processStateTransition(States current) {
         			}
 					return States::MOVING;
 				}
-
-                // Check for safety conditions
-                if (!performSafetyCheck(currentPosition)) {
-                    spdlog::warn("Safety check failed - tension outside of normal bounds.");
-                    return States::TENSION;
-                }
-
                 return States::RUNNING;
             }
             return States::MOVING;
 
         case States::TENSION:
-            // First time we enter here, we should skip over.
-            // Wait for motors to reach positions
+            // Only stop motors if we just transitioned from MOVING state
+            if (previousState == States::MOVING && !readMotorPositions()) {
+                spdlog::warn("TENSION: Just entered from MOVING - stopping motors to adjust tension safely");
+
+                // Read current positions and set as destinations to stop motors
+                for (int i = 0; i < MOTOR_CNT; i++) {
+                    int currentPos = motors[i].checkAndGetPresentPosition(packetHandler, portHandler, &groupSyncRead);
+                    motorDestinations[i] = currentPos;
+                    spdlog::debug("Motor {}: stopping at position {}", i, currentPos);
+                }
+
+                // Execute stop command
+                if (!moveMotorPositions()) {
+                    spdlog::error("Failed to stop motors during tension adjustment");
+                    return States::ERR;
+                }
+
+                return States::TENSION;  // Stay in TENSION until motors stop
+            }
+
+            // Wait for motors to complete any ongoing movement (from tension adjustment)
             if (!readMotorPositions()) {
+                spdlog::debug("TENSION: Waiting for motors to complete movement");
                 return States::TENSION;
             }
 
-            // First time we enter here, we should skip over.
-            // Check if tension is now acceptable
+            // Motors are now stopped - check if tension is now acceptable
             if (performSafetyCheck(currentPosition)) {
+                spdlog::info("Tension is now safe - checking if we need to resume movement");
+
+                // If we're not close to desired position, go to MOVING
+                if (!currentCloseToDesired()) {
+                    spdlog::info("Resuming movement to desired position after tension adjustment");
+                    return States::MOVING;
+                }
+
+                // Close to desired and tension is safe
                 spdlog::info("Tension adjustment complete - returning to RUNNING");
                 return States::RUNNING;
             }
 
-            // Perform tension adjustment
+            // Tension still unsafe - adjust it
+            spdlog::info("Adjusting tension to bring load cells within safe range");
             if (!adjustTensionBasedOnLoadCells()) {
                 spdlog::error("Failed to adjust tension - entering error state");
                 return States::ERR;
             }
 
-            // Still out of bounds, adjust again
+            // Adjustment applied, stay in TENSION to verify on next cycle
             return States::TENSION;
 
         case States::ERR:
@@ -791,17 +820,49 @@ bool SystemController::validateMotorCommand(MotorCommand& cmd) {
 }
 
 void SystemController::setMotorDestinationsForTarget(DOUBLE_POSITION_ANGLES_RECORD& targetPos) {
+    // Calculate plane
+    double a1 = staticBasePositions[1].x - staticBasePositions[0].x;
+    double b1 = staticBasePositions[1].y - staticBasePositions[0].y;
+    double c1 = staticBasePositions[1].z - staticBasePositions[0].z;
+    double a2 = staticBasePositions[2].x - staticBasePositions[0].x;
+    double b2 = staticBasePositions[2].y - staticBasePositions[0].y;
+    double c2 = staticBasePositions[2].z - staticBasePositions[0].z;
+    double a = b1 * c2 - b2 * c1;
+    double b = a2 * c1 - a1 * c2;
+    double c = a1 * b2 - b1 * a2;
+    double normalMagnitude = sqrt(pow(a, 2) + pow(b, 2) + pow(c, 2));
+
+    // Project current position onto the plane defined by the three base positions
+    // Plane equation: a(x-x0) + b(y-y0) + c(z-z0) = 0, where (x0,y0,z0) is a point on the plane
+    // Distance from point to plane: d = (a*px + b*py + c*pz - D) / ||normal||
+    // where D = a*x0 + b*y0 + c*z0
+    double D = a * staticBasePositions[0].x + b * staticBasePositions[0].y + c * staticBasePositions[0].z;
+
+    // Project current position onto plane
+    double currentDistanceToPlane = (a * currentPosition.x + b * currentPosition.y + c * currentPosition.z - D) / normalMagnitude;
+    DOUBLE_POSITION_ANGLES_RECORD projectedCurrent;
+    projectedCurrent.x = currentPosition.x - (a / normalMagnitude) * currentDistanceToPlane;
+    projectedCurrent.y = currentPosition.y - (b / normalMagnitude) * currentDistanceToPlane;
+    projectedCurrent.z = currentPosition.z - (c / normalMagnitude) * currentDistanceToPlane;
+
+    // Project target position onto plane
+    double targetDistanceToPlane = (a * targetPos.x + b * targetPos.y + c * targetPos.z - D) / normalMagnitude;
+    DOUBLE_POSITION_ANGLES_RECORD projectedTarget;
+    projectedTarget.x = targetPos.x - (a / normalMagnitude) * targetDistanceToPlane;
+    projectedTarget.y = targetPos.y - (b / normalMagnitude) * targetDistanceToPlane;
+    projectedTarget.z = targetPos.z - (c / normalMagnitude) * targetDistanceToPlane;
+
     for (int i = 0; i < MOTOR_CNT; i++) {
-        double curr_x = currentPosition.x - staticBasePositions[i].x;
-        double curr_y = currentPosition.y - staticBasePositions[i].y;
-        double curr_z = currentPosition.z - staticBasePositions[i].z;
+        double curr_x = projectedCurrent.x - staticBasePositions[i].x;
+        double curr_y = projectedCurrent.y - staticBasePositions[i].y;
+        double curr_z = projectedCurrent.z - staticBasePositions[i].z;
         double curr_cable_length = sqrt(pow(curr_x, 2) + pow(curr_y, 2) + pow(curr_z, 2));
         int curr_step_count = motors[i].mmToDynamixelUnits(curr_cable_length);
         spdlog::info("Base {}. Current cable length/step count: {}/{}", i, curr_cable_length, curr_step_count);
 
-        double dx = targetPos.x - staticBasePositions[i].x;
-        double dy = targetPos.y - staticBasePositions[i].y;
-        double dz = targetPos.z - staticBasePositions[i].z;
+        double dx = projectedTarget.x - staticBasePositions[i].x;
+        double dy = projectedTarget.y - staticBasePositions[i].y;
+        double dz = projectedTarget.z - staticBasePositions[i].z;
         double desired_cable_length = sqrt(pow(dx, 2) + pow(dy, 2) + pow(dz, 2));
         int desired_step_count = motors[i].mmToDynamixelUnits(desired_cable_length);
         spdlog::info("Desired cable length/step count: {}/{}", desired_cable_length, desired_step_count);
@@ -1228,11 +1289,11 @@ bool SystemController::currentCloseToDesired() {
 
     double desiredDistanceToPlane = (a * desiredPosition.x + b * desiredPosition.y + c * desiredPosition.z - D) / normalMagnitude;
 
-    // Project current position onto plane
+    // Project desired position onto plane
     DOUBLE_POSITION_ANGLES_RECORD projectedDesired;
-    projectedDesired.x = currentPosition.x - (a / normalMagnitude) * desiredDistanceToPlane;
-    projectedDesired.y = currentPosition.y - (b / normalMagnitude) * desiredDistanceToPlane;
-    projectedDesired.z = currentPosition.z - (c / normalMagnitude) * desiredDistanceToPlane;
+    projectedDesired.x = desiredPosition.x - (a / normalMagnitude) * desiredDistanceToPlane;
+    projectedDesired.y = desiredPosition.y - (b / normalMagnitude) * desiredDistanceToPlane;
+    projectedDesired.z = desiredPosition.z - (c / normalMagnitude) * desiredDistanceToPlane;
 
     spdlog::info("Projected desired position onto plane: ({:.3f}, {:.3f}, {:.3f})",
                  projectedDesired.x, projectedDesired.y, projectedDesired.z);
