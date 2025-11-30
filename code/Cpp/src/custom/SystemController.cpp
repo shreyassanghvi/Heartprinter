@@ -498,9 +498,14 @@ States SystemController::processStateTransition(States current) {
 
         case States::MOVING:
             // Check for safety conditions
-            if (!performSafetyCheck(currentPosition)) {
-                spdlog::warn("Safety check failed - tension outside of normal bounds.");
-                return States::TENSION;
+            double channelAverages[3];
+            if (getDAQChannelAverages(channelAverages)) {
+                for (int i = 0; i < 3; i++) {
+                    if (channelAverages[i] < -0.1) {
+                        spdlog::warn("MOVING: Tension is much too high, (less than -0.1V).");
+                        return States::TENSION;
+                    }
+                }
             }
 
             // Check if motors have reached their targets
