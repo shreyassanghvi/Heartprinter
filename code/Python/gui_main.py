@@ -679,8 +679,8 @@ class MainWindow(QWidget):
         #       2. Move back to home position
 
         self.waypoint_queue = [home.copy()]
-        base_proximity_distance = 7.5
-        midpoint_proximity_distance = 7.5
+        base_proximity_distance = 18
+        midpoint_proximity_distance = 2.5
 
         # A. For each static base (Left, Center, Right)
         for i, base_point in enumerate(self.points):
@@ -691,9 +691,6 @@ class MainWindow(QWidget):
             if direction_norm > 0:
                 # Normalize direction and position 1mm away from the base (toward home)
                 temp_base_proximity_distance = base_proximity_distance
-                if i in [0, 2]:
-                    temp_base_proximity_distance += 15
-
                 direction_unit = direction / direction_norm
                 near_base = base_point + direction_unit * temp_base_proximity_distance
 
@@ -744,6 +741,10 @@ class MainWindow(QWidget):
 
         # Add final return to home to ensure we end at home
         self.waypoint_queue.append(home.copy())
+
+        print(self.waypoint_queue)
+        self.waypoint_queue = [self.waypoint_queue[4], self.waypoint_queue[3], self.waypoint_queue[9], self.waypoint_queue[5], self.waypoint_queue[6]]
+        print(self.waypoint_queue)
 
         # Start the routine
         self.waypoint_routine_active = True
