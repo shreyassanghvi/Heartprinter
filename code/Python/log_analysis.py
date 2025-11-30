@@ -361,7 +361,7 @@ def generate_report(summary):
     report.append(f"\nTotal position checks: {len(above_threshold) + len(below_threshold)}")
 
     # Errors ABOVE threshold (>1.5mm)
-    report.append("\n🔴 ERRORS ABOVE THRESHOLD (> 1.5mm):")
+    report.append("\n ERRORS ABOVE THRESHOLD (> 1.5mm):")
     report.append("=" * 40)
     if above_threshold:
         magnitudes = [e['magnitude'] for e in above_threshold]
@@ -385,12 +385,12 @@ def generate_report(summary):
         for bin_name, count in bins.items():
             if count > 0:
                 percentage = (count / len(magnitudes)) * 100
-                report.append(f"    • {bin_name}: {count} ({percentage:.1f}%)")
+                report.append(f"    {bin_name}: {count} ({percentage:.1f}%)")
     else:
         report.append("  - No errors above threshold detected!")
 
     # Errors BELOW threshold (<=1.5mm)
-    report.append("\n\n✅ ERRORS BELOW THRESHOLD (<= 1.5mm) [ACCEPTED]:")
+    report.append("\n\n ERRORS BELOW THRESHOLD (<= 1.5mm) [ACCEPTED]:")
     report.append("=" * 40)
     if below_threshold:
         magnitudes = [e['magnitude'] for e in below_threshold]
@@ -421,7 +421,7 @@ def generate_report(summary):
     total_errors = len(above_threshold) + len(below_threshold)
     if total_errors > 0:
         acceptance_rate = (len(below_threshold) / total_errors) * 100
-        report.append(f"\n📈 SUMMARY:")
+        report.append(f"\nSUMMARY:")
         report.append(f"  - Position acceptance rate: {acceptance_rate:.1f}% ({len(below_threshold)}/{total_errors})")
         report.append(f"  - Position rejection rate: {100-acceptance_rate:.1f}% ({len(above_threshold)}/{total_errors})")
 
@@ -445,11 +445,11 @@ def generate_report(summary):
 
             # Categorize response time
             if avg_time <= 50:
-                report.append(f"  - RESPONSE: ⚡ FAST (≤ 50ms)")
+                report.append(f"  - RESPONSE: FAST (< 50ms)")
             elif avg_time <= 200:
-                report.append(f"  - RESPONSE: 📊 NORMAL (≤ 200ms)")
+                report.append(f"  - RESPONSE: NORMAL (< 200ms)")
             else:
-                report.append(f"  - RESPONSE: ⚠️  SLOW (> 200ms)")
+                report.append(f"  - RESPONSE: SLOW (> 200ms)")
 
     # Overall timing statistics
     if all_timings:
@@ -500,12 +500,12 @@ def generate_report(summary):
     overload_count = summary['errors_warnings'].get('tension_overload', 0)
 
     if underload_count > 100:
-        findings.append("⚠️  SIGNIFICANT UNDERLOAD ISSUES: System frequently detects insufficient tension")
+        findings.append(" SIGNIFICANT UNDERLOAD ISSUES: System frequently detects insufficient tension")
     if overload_count > 50:
-        findings.append("⚠️  FREQUENT OVERLOAD CONDITIONS: Motors experiencing excessive tension")
+        findings.append(" FREQUENT OVERLOAD CONDITIONS: Motors experiencing excessive tension")
 
     if total_adjustments > 500:
-        findings.append("🔧  HIGH ADJUSTMENT FREQUENCY: System constantly correcting tension levels")
+        findings.append(" HIGH ADJUSTMENT FREQUENCY: System constantly correcting tension levels")
 
     # NEW: Cartesian position accuracy findings
     above_threshold = summary['cartesian_errors']['above_threshold']
@@ -518,40 +518,40 @@ def generate_report(summary):
         if below_threshold:
             avg_accepted_error = sum(e['magnitude'] for e in below_threshold) / len(below_threshold)
             if avg_accepted_error < 0.5:
-                findings.append(f"✅  EXCELLENT CARTESIAN ACCURACY: Average accepted error of {avg_accepted_error:.3f}mm")
+                findings.append(f" EXCELLENT CARTESIAN ACCURACY: Average accepted error of {avg_accepted_error:.3f}mm")
             elif avg_accepted_error < 1.0:
-                findings.append(f"✅  GOOD CARTESIAN ACCURACY: Average accepted error of {avg_accepted_error:.3f}mm")
+                findings.append(f" GOOD CARTESIAN ACCURACY: Average accepted error of {avg_accepted_error:.3f}mm")
             else:
-                findings.append(f"📊  MODERATE CARTESIAN ACCURACY: Average accepted error of {avg_accepted_error:.3f}mm")
+                findings.append(f" MODERATE CARTESIAN ACCURACY: Average accepted error of {avg_accepted_error:.3f}mm")
 
         if acceptance_rate >= 90:
-            findings.append(f"✅  HIGH POSITION ACCEPTANCE RATE: {acceptance_rate:.1f}% of positions accepted")
+            findings.append(f" HIGH POSITION ACCEPTANCE RATE: {acceptance_rate:.1f}% of positions accepted")
         elif acceptance_rate >= 70:
-            findings.append(f"📊  MODERATE POSITION ACCEPTANCE RATE: {acceptance_rate:.1f}% of positions accepted")
+            findings.append(f" MODERATE POSITION ACCEPTANCE RATE: {acceptance_rate:.1f}% of positions accepted")
         else:
-            findings.append(f"⚠️  LOW POSITION ACCEPTANCE RATE: Only {acceptance_rate:.1f}% of positions accepted")
+            findings.append(f" LOW POSITION ACCEPTANCE RATE: Only {acceptance_rate:.1f}% of positions accepted")
 
         if above_threshold:
             avg_rejected_error = sum(e['magnitude'] for e in above_threshold) / len(above_threshold)
             if avg_rejected_error > 10:
-                findings.append(f"⚠️  LARGE POSITION ERRORS DETECTED: Average rejected error of {avg_rejected_error:.1f}mm")
+                findings.append(f" LARGE POSITION ERRORS DETECTED: Average rejected error of {avg_rejected_error:.1f}mm")
 
     # NEW: Timing findings
     if all_timings:
         overall_avg = sum(all_timings) / len(all_timings)
         if overall_avg > 500:
-            findings.append("⚠️  SLOW RESPONSE: Adjustment intervals exceeding 500ms")
+            findings.append(" SLOW RESPONSE: Adjustment intervals exceeding 500ms")
         elif overall_avg <= 50:
-            findings.append("✅  FAST RESPONSE: System responding quickly to tension changes")
+            findings.append(" FAST RESPONSE: System responding quickly to tension changes")
 
     # Check if system is generally stable despite adjustments
     if underload_count + overload_count < total_adjustments * 0.1:
-        findings.append("✅  SYSTEM STABILITY: Tension control is actively maintaining stable operation")
+        findings.append(" SYSTEM STABILITY: Tension control is actively maintaining stable operation")
     else:
-        findings.append("⚠️  TENSION INSTABILITY: Frequent safety threshold violations")
+        findings.append(" TENSION INSTABILITY: Frequent safety threshold violations")
 
     if not findings:
-        findings.append("✅  SYSTEM OPERATING NORMALLY: No major issues detected")
+        findings.append(" SYSTEM OPERATING NORMALLY: No major issues detected")
 
     for finding in findings:
         report.append(finding)
@@ -659,7 +659,7 @@ if __name__ == "__main__":
 
         # Validate log file
         if not is_valid_log_file(log_file):
-            print(f"  ⚠️  Skipping - not a valid Heart Printer log file")
+            print(f"Skipping - not a valid Heart Printer log file")
             continue
 
         try:
@@ -679,11 +679,11 @@ if __name__ == "__main__":
             with open(output_file, 'w') as f:
                 f.write(report)
 
-            print(f"  ✅ Analysis saved to: {output_file}")
+            print(f"Analysis saved to: {output_file}")
             processed_count += 1
 
         except Exception as e:
-            print(f"  ❌ Error processing file: {e}")
+            print(f"Error processing file: {e}")
             continue
 
     # Generate combined CSV
