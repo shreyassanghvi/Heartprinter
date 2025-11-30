@@ -162,11 +162,11 @@ int main(int argc, char *argv[]) {
         config.deviceName = "COM4";  // Adjust for your system
         config.baudRate = 57600;
         config.enableSafetyChecks = true;
-        config.maxLoadVoltage = -0.02;
-        config.minLoadVoltage = -0.05;
+        config.maxLoadVoltage = -0.01;
+        config.minLoadVoltage = -0.03;
         config.tensionAdjustmentSteps = 50;
         config.trackingDeadband = 300.0;
-        config.posErrorThreshold = 1.5;
+        config.posErrorThreshold = 1.0;
         config.angleThreshold = 7.0;
 
         // Run pre-initialization checklist
