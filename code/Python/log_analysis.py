@@ -5,6 +5,8 @@ import sys
 import glob
 import os
 import csv
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 
 def is_valid_log_file(file_path):
     """
@@ -49,6 +51,14 @@ def analyze_heart_printer_logs(log_content, log_file_path=None):
             'above_threshold': [],  # Error vector magnitudes > 1.5mm
             'below_threshold': []   # Error vector magnitudes <= 1.5mm
         },
+        'desired_positions': [],  # Track desired position changes over time
+        'position_tension_data': [],  # Track position and tension correlation
+        'cable_tracking': {
+            'motor_0': {'current': [], 'desired': [], 'timestamps': [], 'positions': [], 'position_timestamps': []},
+            'motor_1': {'current': [], 'desired': [], 'timestamps': [], 'positions': [], 'position_timestamps': []},
+            'motor_2': {'current': [], 'desired': [], 'timestamps': [], 'positions': [], 'position_timestamps': []}
+        },
+        'in_plane_distance': [],  # Track in-plane distance over time
         'errors_warnings': defaultdict(int),
         'performance_metrics': defaultdict(int)
     }
@@ -62,6 +72,12 @@ def analyze_heart_printer_logs(log_content, log_file_path=None):
     motor_tension_pattern = r'Motor (\d) (underload|overload)'
     safety_warning_pattern = r'Safety: Load cell (\d) (underload|overload)'
     daq_pattern = r'DAQ - Samples/Ch: \d+ - Avg\[Ch0\]:\s*([-\d.]+), Avg\[Ch1\]:\s*([-\d.]+), Avg\[Ch2\]:\s*([-\d.]+)'
+    # desired_position_pattern = r'(?:New desired position set|desired position set to centroid):\s*\(([-\d.]+),\s*([-\d.]+),\s*([-\d.]+)\)'
+    desired_position_pattern = r'Desired position:\s*\(([-\d.]+),\s*([-\d.]+),\s*([-\d.]+)\)'
+    current_position_pattern = r'Current position:\s*\(([-\d.]+),\s*([-\d.]+),\s*([-\d.]+)\)'
+    cable_pattern = r'Base (\d)\. Current cable length/step count:\s*([-\d.]+)/\d+'
+    desired_cable_pattern = r'Desired cable length/step count:\s*([-\d.]+)/\d+'
+    in_plane_pattern = r'In-plane distance \(projected desired to projected current\):\s*([-\d.]+)'
 
     # State detection patterns - based on actual log messages
     not_close_pattern = r'Position not close enough to desired'
@@ -88,6 +104,15 @@ def analyze_heart_printer_logs(log_content, log_file_path=None):
     last_error_magnitude = None
     last_error_timestamp = None
     last_error_state = 'UNKNOWN'
+
+    # Track recent position and DAQ data for correlation
+    last_position = None
+    last_desired_position = None
+    last_daq_readings = None
+
+    # Track cable length data (comes in sequence: base0 current, desired, base1 current, desired, base2 current, desired, in-plane)
+    current_cable_data = {'motor': None, 'current': None, 'desired': None, 'timestamp': None}
+    pending_cable_updates = []
 
     # Parse each line
     for line in lines:
@@ -158,22 +183,44 @@ def analyze_heart_printer_logs(log_content, log_file_path=None):
                     system_is_stable = False
                     # Categorize the last error magnitude as above threshold
                     if last_error_magnitude is not None:
-                        summary['cartesian_errors']['above_threshold'].append({
+                        error_data = {
                             'timestamp': last_error_timestamp,
                             'magnitude': last_error_magnitude,
                             'threshold': threshold,
                             'state': last_error_state
-                        })
+                        }
+                        # Add current position if available
+                        if last_position:
+                            error_data['current_x'] = last_position['x']
+                            error_data['current_y'] = last_position['y']
+                            error_data['current_z'] = last_position['z']
+                        # Add desired position if available
+                        if last_desired_position:
+                            error_data['desired_x'] = last_desired_position['x']
+                            error_data['desired_y'] = last_desired_position['y']
+                            error_data['desired_z'] = last_desired_position['z']
+                        summary['cartesian_errors']['above_threshold'].append(error_data)
                         last_error_magnitude = None
                 else:
                     # Below threshold
                     if last_error_magnitude is not None:
-                        summary['cartesian_errors']['below_threshold'].append({
+                        error_data = {
                             'timestamp': last_error_timestamp,
                             'magnitude': last_error_magnitude,
                             'threshold': threshold,
                             'state': last_error_state
-                        })
+                        }
+                        # Add current position if available
+                        if last_position:
+                            error_data['current_x'] = last_position['x']
+                            error_data['current_y'] = last_position['y']
+                            error_data['current_z'] = last_position['z']
+                        # Add desired position if available
+                        if last_desired_position:
+                            error_data['desired_x'] = last_desired_position['x']
+                            error_data['desired_y'] = last_desired_position['y']
+                            error_data['desired_z'] = last_desired_position['z']
+                        summary['cartesian_errors']['below_threshold'].append(error_data)
                         last_error_magnitude = None
 
             # Detect "position not close enough" warnings
@@ -210,6 +257,12 @@ def analyze_heart_printer_logs(log_content, log_file_path=None):
                 # Track all motor positions
                 summary['tension_control']['motor_positions'][f'motor_{motor_num}'].append(current_pos)
                 summary['tension_control']['position_accuracy'][f'motor_{motor_num}'].append(position_error)
+
+                # Track motor positions for cable tracking graph
+                motor_key = f'motor_{motor_num}'
+                if motor_key in summary['cable_tracking']:
+                    summary['cable_tracking'][motor_key]['positions'].append(current_pos)
+                    summary['cable_tracking'][motor_key]['position_timestamps'].append(current_time)
 
                 # Categorize error based on recent state indicators
                 # If system is stable or no recent threshold warnings, this is an accepted error
@@ -265,9 +318,93 @@ def analyze_heart_printer_logs(log_content, log_file_path=None):
 
             # DAQ readings
             daq_match = re.search(daq_pattern, message)
-            if daq_match:
-                for i, reading in enumerate(daq_match.groups()):
-                    summary['tension_control']['load_cell_readings'][f'ch{i}'].append(float(reading))
+            if daq_match and current_time:
+                # Store in load cell readings
+                readings = [float(r) for r in daq_match.groups()]
+                for i, reading in enumerate(readings):
+                    summary['tension_control']['load_cell_readings'][f'ch{i}'].append({
+                        'timestamp': current_time,
+                        'voltage': reading
+                    })
+
+                # Keep last DAQ readings for position correlation
+                last_daq_readings = readings
+
+            # Desired position changes
+            desired_pos_match = re.search(desired_position_pattern, message)
+            if desired_pos_match and current_time:
+                x = float(desired_pos_match.group(1))
+                y = float(desired_pos_match.group(2))
+                z = float(desired_pos_match.group(3))
+                last_desired_position = {
+                    'timestamp': current_time,
+                    'x': x,
+                    'y': y,
+                    'z': z
+                }
+                summary['desired_positions'].append(last_desired_position)
+
+            # Current position tracking
+            current_pos_match = re.search(current_position_pattern, message)
+            if current_pos_match and current_time:
+                x = float(current_pos_match.group(1))
+                y = float(current_pos_match.group(2))
+                z = float(current_pos_match.group(3))
+                last_position = {
+                    'timestamp': current_time,
+                    'x': x,
+                    'y': y,
+                    'z': z
+                }
+
+                # If we have recent DAQ readings, correlate them
+                if last_daq_readings:
+                    summary['position_tension_data'].append({
+                        'timestamp': current_time,
+                        'x': x,
+                        'y': y,
+                        'z': z,
+                        'ch0': last_daq_readings[0],
+                        'ch1': last_daq_readings[1],
+                        'ch2': last_daq_readings[2]
+                    })
+
+            # Cable length tracking
+            cable_match = re.search(cable_pattern, message)
+            if cable_match and current_time:
+                motor_num = int(cable_match.group(1))
+                current_length = float(cable_match.group(2))
+                current_cable_data = {
+                    'motor': motor_num,
+                    'current': current_length,
+                    'desired': None,
+                    'timestamp': current_time
+                }
+
+            # Desired cable length (follows current cable length)
+            desired_cable_match = re.search(desired_cable_pattern, message)
+            if desired_cable_match and current_cable_data['motor'] is not None:
+                desired_length = float(desired_cable_match.group(1))
+                current_cable_data['desired'] = desired_length
+
+                # Store cable data
+                motor_key = f"motor_{current_cable_data['motor']}"
+                if motor_key in summary['cable_tracking']:
+                    summary['cable_tracking'][motor_key]['current'].append(current_cable_data['current'])
+                    summary['cable_tracking'][motor_key]['desired'].append(current_cable_data['desired'])
+                    summary['cable_tracking'][motor_key]['timestamps'].append(current_cable_data['timestamp'])
+
+                # Reset for next motor
+                current_cable_data = {'motor': None, 'current': None, 'desired': None, 'timestamp': None}
+
+            # In-plane distance tracking
+            in_plane_match = re.search(in_plane_pattern, message)
+            if in_plane_match and current_time:
+                distance = float(in_plane_match.group(1))
+                summary['in_plane_distance'].append({
+                    'timestamp': current_time,
+                    'distance': distance
+                })
 
             # Error and warning counting
             if level in ['W', 'E']:
@@ -413,7 +550,7 @@ def generate_report(summary):
         for bin_name, count in bins.items():
             if count > 0:
                 percentage = (count / len(magnitudes)) * 100
-                report.append(f"    • {bin_name}: {count} ({percentage:.1f}%)")
+                report.append(f"    {bin_name}: {count} ({percentage:.1f}%)")
     else:
         report.append("  - No errors below threshold detected!")
 
@@ -484,7 +621,8 @@ def generate_report(summary):
     report.append("\nLoad Cell Activity:")
     for channel, readings in summary['tension_control']['load_cell_readings'].items():
         if readings:
-            avg_reading = sum(readings) / len(readings)
+            voltages = [r['voltage'] for r in readings]
+            avg_reading = sum(voltages) / len(voltages)
             report.append(f"  - {channel}: {len(readings)} readings, avg: {avg_reading:.4f}V")
 
 
@@ -583,7 +721,13 @@ def generate_csv_from_summaries(summaries, output_csv_path):
                 'magnitude_mm': error_data['magnitude'],
                 'threshold_mm': error_data.get('threshold', 1.5),
                 'status': 'rejected',
-                'state': error_data.get('state', 'UNKNOWN')
+                'state': error_data.get('state', 'UNKNOWN'),
+                'current_x': error_data.get('current_x', ''),
+                'current_y': error_data.get('current_y', ''),
+                'current_z': error_data.get('current_z', ''),
+                'desired_x': error_data.get('desired_x', ''),
+                'desired_y': error_data.get('desired_y', ''),
+                'desired_z': error_data.get('desired_z', '')
             })
 
         # Process below threshold errors (accepted)
@@ -602,7 +746,13 @@ def generate_csv_from_summaries(summaries, output_csv_path):
                 'magnitude_mm': error_data['magnitude'],
                 'threshold_mm': error_data.get('threshold', 1.5),
                 'status': 'accepted',
-                'state': error_data.get('state', 'UNKNOWN')
+                'state': error_data.get('state', 'UNKNOWN'),
+                'current_x': error_data.get('current_x', ''),
+                'current_y': error_data.get('current_y', ''),
+                'current_z': error_data.get('current_z', ''),
+                'desired_x': error_data.get('desired_x', ''),
+                'desired_y': error_data.get('desired_y', ''),
+                'desired_z': error_data.get('desired_z', '')
             })
 
     # Sort by unix timestamp
@@ -610,7 +760,8 @@ def generate_csv_from_summaries(summaries, output_csv_path):
 
     # Write CSV
     with open(output_csv_path, 'w', newline='') as csvfile:
-        fieldnames = ['log_file', 'unix_timestamp', 'datetime', 'magnitude_mm', 'threshold_mm', 'status', 'state']
+        fieldnames = ['log_file', 'unix_timestamp', 'datetime', 'magnitude_mm', 'threshold_mm', 'status', 'state',
+                      'current_x', 'current_y', 'current_z', 'desired_x', 'desired_y', 'desired_z']
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 
         writer.writeheader()
@@ -619,6 +770,248 @@ def generate_csv_from_summaries(summaries, output_csv_path):
 
     print(f"CSV file generated: {output_csv_path}")
     print(f"Total positional errors recorded: {len(csv_rows)}")
+
+def generate_tension_graphs(summary, output_path):
+    """
+    Generate graphs showing tension (load cell voltage) over time for each channel
+    """
+    load_cell_readings = summary['tension_control']['load_cell_readings']
+    desired_positions = summary.get('desired_positions', [])
+
+    # Check if we have any load cell data
+    if not any(load_cell_readings.values()):
+        print("No load cell data available for graphing")
+        return
+
+    # Create figure with subplots for each channel
+    fig, axes = plt.subplots(3, 1, figsize=(12, 10), sharex=True)
+    fig.suptitle('Load Cell Tension Over Time with Desired Position Changes', fontsize=16, fontweight='bold')
+
+    colors = ['#1f77b4', '#ff7f0e', '#2ca02c']  # Blue, Orange, Green
+
+    for ch_idx, (channel, readings) in enumerate(sorted(load_cell_readings.items())):
+        if not readings:
+            continue
+
+        # Extract timestamps and voltages
+        timestamps = []
+        voltages = []
+
+        for reading in readings:
+            try:
+                dt = datetime.strptime(reading['timestamp'], '%Y-%m-%d %H:%M:%S.%f')
+                timestamps.append(dt)
+                voltages.append(reading['voltage'])
+            except (ValueError, KeyError) as e:
+                continue
+
+        if not timestamps:
+            continue
+
+        # Plot on corresponding subplot
+        ax = axes[ch_idx]
+        ax.plot(timestamps, voltages, color=colors[ch_idx], linewidth=0.8, alpha=0.7, label='Tension')
+        ax.set_ylabel(f'Channel {ch_idx} (V)', fontweight='bold')
+        ax.grid(True, alpha=0.3)
+
+        # Add desired position change markers
+        if desired_positions:
+            for i, pos_change in enumerate(desired_positions):
+                try:
+                    pos_time = datetime.strptime(pos_change['timestamp'], '%Y-%m-%d %H:%M:%S.%f')
+
+                    # Draw vertical line at position change time
+                    ax.axvline(x=pos_time, color='red', linestyle='--', linewidth=1.5, alpha=0.6)
+
+                    # Add text annotation for first few position changes (avoid clutter)
+                    if i < 5:  # Only annotate first 5 changes
+                        pos_text = f"({pos_change['x']:.1f}, {pos_change['y']:.1f}, {pos_change['z']:.1f})"
+                        ax.text(pos_time, ax.get_ylim()[1] * 0.85, pos_text,
+                               rotation=90, fontsize=7, verticalalignment='bottom',
+                               color='red', alpha=0.8)
+                except (ValueError, KeyError):
+                    continue
+
+        # Add statistics to plot
+        avg_voltage = sum(voltages) / len(voltages)
+        max_voltage = max(voltages)
+        min_voltage = min(voltages)
+
+        stats_text = f'Avg: {avg_voltage:.3f}V | Min: {min_voltage:.3f}V | Max: {max_voltage:.3f}V'
+        ax.text(0.02, 0.95, stats_text, transform=ax.transAxes,
+                fontsize=9, verticalalignment='top',
+                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+
+        # Add legend only on first subplot
+        if ch_idx == 0 and desired_positions:
+            from matplotlib.lines import Line2D
+            legend_elements = [
+                Line2D([0], [0], color=colors[ch_idx], linewidth=2, label='Tension'),
+                Line2D([0], [0], color='red', linestyle='--', linewidth=1.5, label='Desired Position Change')
+            ]
+            ax.legend(handles=legend_elements, loc='upper right', fontsize=8)
+
+        # Format y-axis
+        ax.set_ylim(min_voltage - 0.5, max_voltage + 0.5)
+
+    # Format x-axis (time)
+    axes[-1].set_xlabel('Time', fontweight='bold')
+    axes[-1].xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
+    plt.setp(axes[-1].xaxis.get_majorticklabels(), rotation=45, ha='right')
+
+    # Adjust layout and save
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=150, bbox_inches='tight')
+    plt.close()
+
+    print(f"Tension graph saved to: {output_path}")
+    if desired_positions:
+        print(f"  - Marked {len(desired_positions)} desired position change(s)")
+
+def generate_cable_tracking_graph(summary, output_path):
+    """
+    Generate graphs showing current/desired cable lengths and in-plane distance over time
+    """
+    cable_data = summary.get('cable_tracking', {})
+    in_plane_data = summary.get('in_plane_distance', [])
+
+    # Check if we have cable tracking data
+    has_data = any(cable_data.get(f'motor_{i}', {}).get('current', []) for i in range(3))
+
+    if not has_data and not in_plane_data:
+        print("No cable tracking data available for graphing")
+        return
+
+    # Create figure with 4 subplots (3 motors + 1 in-plane distance)
+    fig, axes = plt.subplots(4, 1, figsize=(14, 12), sharex=True)
+    fig.suptitle('Cable Length Tracking and In-Plane Distance', fontsize=16, fontweight='bold')
+
+    colors_current = ['#1f77b4', '#ff7f0e', '#2ca02c']  # Blue, Orange, Green
+    colors_desired = ['#4a90e2', '#ff9f50', '#5fbf5f']  # Lighter versions
+
+    # Plot cable lengths for each motor
+    for motor_idx in range(3):
+        motor_key = f'motor_{motor_idx}'
+        if motor_key not in cable_data:
+            continue
+
+        timestamps_str = cable_data[motor_key].get('timestamps', [])
+        current_lengths = cable_data[motor_key].get('current', [])
+        desired_lengths = cable_data[motor_key].get('desired', [])
+
+        if not timestamps_str:
+            continue
+
+        # Convert timestamps
+        timestamps = []
+        for ts_str in timestamps_str:
+            try:
+                dt = datetime.strptime(ts_str, '%Y-%m-%d %H:%M:%S.%f')
+                timestamps.append(dt)
+            except ValueError:
+                continue
+
+        if not timestamps:
+            continue
+
+        ax = axes[motor_idx]
+
+        # Plot current and desired cable lengths
+        ax.plot(timestamps, current_lengths, color=colors_current[motor_idx],
+               linewidth=1.5, label='Current Length', marker='o', markersize=2, alpha=0.7)
+        ax.plot(timestamps, desired_lengths, color=colors_desired[motor_idx],
+               linewidth=1.5, label='Desired Length', linestyle='--', marker='s', markersize=2, alpha=0.7)
+
+        ax.set_ylabel(f'Motor {motor_idx}\nLength (mm)', fontweight='bold')
+        ax.grid(True, alpha=0.3)
+
+        # Add motor positions on secondary y-axis
+        position_timestamps_str = cable_data[motor_key].get('position_timestamps', [])
+        motor_positions = cable_data[motor_key].get('positions', [])
+
+        if position_timestamps_str and motor_positions:
+            # Convert position timestamps
+            position_timestamps = []
+            valid_positions = []
+            for ts_str, pos in zip(position_timestamps_str, motor_positions):
+                try:
+                    dt = datetime.strptime(ts_str, '%Y-%m-%d %H:%M:%S.%f')
+                    position_timestamps.append(dt)
+                    valid_positions.append(pos)
+                except ValueError:
+                    continue
+
+            if position_timestamps:
+                # Create secondary y-axis for motor positions
+                ax2 = ax.twinx()
+                ax2.plot(position_timestamps, valid_positions, color='purple',
+                        linewidth=1.0, label='Motor Position', marker='^', markersize=2,
+                        alpha=0.5, linestyle='-.')
+                ax2.set_ylabel('Position (steps)', fontweight='bold', color='purple')
+                ax2.tick_params(axis='y', labelcolor='purple')
+
+                # Combine legends from both axes
+                lines1, labels1 = ax.get_legend_handles_labels()
+                lines2, labels2 = ax2.get_legend_handles_labels()
+                ax.legend(lines1 + lines2, labels1 + labels2, loc='upper right', fontsize=8)
+        else:
+            ax.legend(loc='upper right', fontsize=8)
+
+        # Add statistics
+        if current_lengths and desired_lengths:
+            avg_current = sum(current_lengths) / len(current_lengths)
+            avg_desired = sum(desired_lengths) / len(desired_lengths)
+            avg_error = sum(abs(c - d) for c, d in zip(current_lengths, desired_lengths)) / len(current_lengths)
+
+            stats_text = f'Avg Current: {avg_current:.1f}mm\nAvg Desired: {avg_desired:.1f}mm\nAvg Error: {avg_error:.2f}mm'
+            ax.text(0.02, 0.98, stats_text, transform=ax.transAxes,
+                   fontsize=8, verticalalignment='top',
+                   bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.7))
+
+    # Plot in-plane distance on 4th subplot
+    if in_plane_data:
+        ax = axes[3]
+
+        timestamps = []
+        distances = []
+
+        for data_point in in_plane_data:
+            try:
+                dt = datetime.strptime(data_point['timestamp'], '%Y-%m-%d %H:%M:%S.%f')
+                timestamps.append(dt)
+                distances.append(data_point['distance'])
+            except (ValueError, KeyError):
+                continue
+
+        if timestamps:
+            ax.plot(timestamps, distances, color='#d62728', linewidth=1.5,
+                   marker='o', markersize=2, alpha=0.7)
+            ax.set_ylabel('In-Plane\nDistance (mm)', fontweight='bold')
+            ax.grid(True, alpha=0.3)
+
+            # Add statistics
+            avg_dist = sum(distances) / len(distances)
+            max_dist = max(distances)
+            min_dist = min(distances)
+
+            stats_text = f'Avg: {avg_dist:.2f}mm\nMin: {min_dist:.2f}mm\nMax: {max_dist:.2f}mm'
+            ax.text(0.02, 0.98, stats_text, transform=ax.transAxes,
+                   fontsize=8, verticalalignment='top',
+                   bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.7))
+
+    # Format x-axis (time)
+    axes[-1].set_xlabel('Time', fontweight='bold')
+    axes[-1].xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
+    plt.setp(axes[-1].xaxis.get_majorticklabels(), rotation=45, ha='right')
+
+    # Adjust layout and save
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=150, bbox_inches='tight')
+    plt.close()
+
+    print(f"Cable tracking graph saved to: {output_path}")
+    if in_plane_data:
+        print(f"  - {len(in_plane_data)} in-plane distance measurements")
 
 # Example usage with your log file:
 if __name__ == "__main__":
@@ -680,6 +1073,15 @@ if __name__ == "__main__":
                 f.write(report)
 
             print(f"Analysis saved to: {output_file}")
+
+            # Generate tension graphs
+            graph_output_file = os.path.join(output_dir, f"{log_basename}_tension.png")
+            generate_tension_graphs(summary, graph_output_file)
+
+            # Generate cable tracking graph
+            cable_graph_file = os.path.join(output_dir, f"{log_basename}_cable_tracking.png")
+            generate_cable_tracking_graph(summary, cable_graph_file)
+
             processed_count += 1
 
         except Exception as e:
