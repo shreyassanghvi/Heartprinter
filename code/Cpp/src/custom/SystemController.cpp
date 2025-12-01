@@ -836,11 +836,6 @@ void SystemController::setMotorDestinationsForTarget(DOUBLE_POSITION_ANGLES_RECO
     double b = a2 * c1 - a1 * c2;
     double c = a1 * b2 - b1 * a2;
     double normalMagnitude = sqrt(pow(a, 2) + pow(b, 2) + pow(c, 2));
-
-    // Project current position onto the plane defined by the three base positions
-    // Plane equation: a(x-x0) + b(y-y0) + c(z-z0) = 0, where (x0,y0,z0) is a point on the plane
-    // Distance from point to plane: d = (a*px + b*py + c*pz - D) / ||normal||
-    // where D = a*x0 + b*y0 + c*z0
     double D = a * staticBasePositions[0].x + b * staticBasePositions[0].y + c * staticBasePositions[0].z;
 
     // Project current position onto plane
@@ -857,36 +852,47 @@ void SystemController::setMotorDestinationsForTarget(DOUBLE_POSITION_ANGLES_RECO
     projectedTarget.y = targetPos.y - (b / normalMagnitude) * targetDistanceToPlane;
     projectedTarget.z = targetPos.z - (c / normalMagnitude) * targetDistanceToPlane;
 
+
+    // Calculate error distance for adaptive damping
+    double error_x = projectedTarget.x - projectedCurrent.x;
+    double error_y = projectedTarget.y - projectedCurrent.y;
+    double error_z = projectedTarget.z - projectedCurrent.z;
+    double error_magnitude = sqrt(pow(error_x, 2) + pow(error_y, 2) + pow(error_z, 2));
+    // Adaptive damping: more aggressive when far, gentler when close
+
+    double DAMPING;
+    if (error_magnitude > 7.0){
+        DAMPING = 1.0;
+    } else if (error_magnitude > 4.5) {
+        DAMPING = 0.75;
+    } else if (error_magnitude > 2.0) {
+        DAMPING = 0.5;
+    } else {
+        DAMPING = 0.125;
+    }
+
     for (int i = 0; i < MOTOR_CNT; i++) {
         double curr_x = projectedCurrent.x - staticBasePositions[i].x;
         double curr_y = projectedCurrent.y - staticBasePositions[i].y;
         double curr_z = projectedCurrent.z - staticBasePositions[i].z;
         double curr_cable_length = sqrt(pow(curr_x, 2) + pow(curr_y, 2) + pow(curr_z, 2));
         int curr_step_count = motors[i].mmToDynamixelUnits(curr_cable_length);
-        spdlog::info("Base {}. Current cable length/step count: {}/{}", i, curr_cable_length, curr_step_count);
 
         double dx = projectedTarget.x - staticBasePositions[i].x;
         double dy = projectedTarget.y - staticBasePositions[i].y;
         double dz = projectedTarget.z - staticBasePositions[i].z;
         double desired_cable_length = sqrt(pow(dx, 2) + pow(dy, 2) + pow(dz, 2));
         int desired_step_count = motors[i].mmToDynamixelUnits(desired_cable_length);
-        spdlog::info("Desired cable length/step count: {}/{}", desired_cable_length, desired_step_count);
 
         int actual_curr_step_count = motors[i].checkAndGetPresentPosition(packetHandler, portHandler, &groupSyncRead);
-        spdlog::info("Actual motor step count: {}", actual_curr_step_count);
 
-        // Assume:
-        // Actual step count = 0, 0, 0
-        // Actual position = 1, 1, 1
-        // Desired position = 0, 0, 0
-        // We would expect:
-        // Desired step count = 1, 1, 1 (to go from 1, 1, 1 to 0, 0, 0)
+        int full_delta = curr_step_count - desired_step_count;
+        int damped_delta = static_cast<int>(full_delta * DAMPING);
 
-        // Actual position = 0, 0, 0
-        // Desired position = 1, 1, 1
-        // Expect:
-        // Desired step count = -1, -1, -1 ( to go from 0, 0, 0 to 1, 1, 1)
-        motorDestinations[i] = actual_curr_step_count + (curr_step_count - desired_step_count);
+        motorDestinations[i] = actual_curr_step_count + damped_delta;
+
+        spdlog::info("Motor {}: curr={:.2f}mm, desired={:.2f}mm, full_delta={}, damped_delta={} ({}%)",
+            i, curr_cable_length, desired_cable_length, full_delta, damped_delta, (int)(DAMPING*100));
     }
 }
 
@@ -1239,9 +1245,6 @@ bool SystemController::currentCloseToDesired() {
     spdlog::info("Error vector magnitude: {:.3f}", posErrorVector);
 
     // If we're somehow very close to the desiredPosition (probably when we're near the bases) go to RUNNING
-    if (posErrorVector < config.posErrorThreshold) {
-        return true;
-    }
 
 	spdlog::warn("Error vector magnitude {} > {} Error Threshold", posErrorVector, config.posErrorThreshold);
 
@@ -1269,11 +1272,6 @@ bool SystemController::currentCloseToDesired() {
     double angleToNormal = acos(std::abs(cosAngle)) * 180.0 / M_PI;
     spdlog::info("Angle to plane normal: {:.1f} deg", angleToNormal);
     spdlog::warn("angleToNormal: {:.1f} deg, {:.1f} deg threshold)", angleToNormal, config.angleThreshold);
-
-    if (angleToNormal <= config.angleThreshold){
-        // We want vector perpendicular to plane (parallel to normal), so angleToNormal should be near 0
-        return true;
-    }
 
     // Project current position onto the plane defined by the three base positions
     // Plane equation: a(x-x0) + b(y-y0) + c(z-z0) = 0, where (x0,y0,z0) is a point on the plane
@@ -1312,6 +1310,14 @@ bool SystemController::currentCloseToDesired() {
 
     spdlog::info("In-plane distance (projected desired to projected current): {:.3f}", inPlaneDistance);
     spdlog::info("In-plane difference vector: ({:.3f}, {:.3f}, {:.3f})", inPlane_dx, inPlane_dy, inPlane_dz);
+    if (posErrorVector < config.posErrorThreshold) {
+        return true;
+    }
+
+    if (angleToNormal <= config.angleThreshold) {
+        // We want vector perpendicular to plane (parallel to normal), so angleToNormal should be near 0
+        return true;
+    }
 
 	return inPlaneDistance <= config.posErrorThreshold;
 }
