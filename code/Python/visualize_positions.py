@@ -7,6 +7,7 @@ Shows base positions, current position, desired position, and the base plane.
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+import mpl_toolkits.mplot3d.art3d as art3d
 import re
 import sys
 from pathlib import Path
@@ -90,6 +91,25 @@ def create_plane_mesh(base1, base2, base3, extend=1.2):
     return X, Y, Z
 
 
+def draw_cable_circle(ax, center, radius, normal, color, alpha=0.3, linestyle='-', linewidth=1.5):
+    """Draw a circle on the base plane centered at a point with given radius.
+    This represents the cable length from a base position to a projected position."""
+    # Get two orthogonal vectors in the plane
+    # Use arbitrary vector not parallel to normal
+    arbitrary = np.array([1, 0, 0]) if abs(normal[0]) < 0.9 else np.array([0, 1, 0])
+    v1 = np.cross(normal, arbitrary)
+    v1 = v1 / np.linalg.norm(v1)
+    v2 = np.cross(normal, v1)
+    v2 = v2 / np.linalg.norm(v2)
+
+    # Parametric circle
+    theta = np.linspace(0, 2*np.pi, 100)
+    circle_points = center[:, np.newaxis] + radius * (v1[:, np.newaxis] * np.cos(theta) + v2[:, np.newaxis] * np.sin(theta))
+
+    ax.plot(circle_points[0, :], circle_points[1, :], circle_points[2, :],
+            color=color, linestyle=linestyle, linewidth=linewidth, alpha=alpha)
+
+
 def plot_positions(pos_data, title="Heartprinter Position Visualization"):
     """Create 3D plot of positions."""
     fig = plt.figure(figsize=(14, 10))
@@ -141,6 +161,15 @@ def plot_positions(pos_data, title="Heartprinter Position Visualization"):
     #         [current[2], current_proj[2]],
     #         'orange', linestyle=':', linewidth=2, alpha=0.7)
 
+    # Draw circles around each base showing cable lengths to current projected position
+    radius1_current = np.linalg.norm(base1 - current_proj)
+    radius2_current = np.linalg.norm(base2 - current_proj)
+    radius3_current = np.linalg.norm(base3 - current_proj)
+
+    draw_cable_circle(ax, base1, radius1_current, normal, 'red', alpha=0.4, linestyle='--', linewidth=2)
+    draw_cable_circle(ax, base2, radius2_current, normal, 'green', alpha=0.4, linestyle='--', linewidth=2)
+    draw_cable_circle(ax, base3, radius3_current, normal, 'blue', alpha=0.4, linestyle='--', linewidth=2)
+
     # Plot desired position if available
     if desired is not None:
         ax.scatter(*desired, c='cyan', s=150, marker='*', label='Desired Position',
@@ -150,6 +179,15 @@ def plot_positions(pos_data, title="Heartprinter Position Visualization"):
         desired_proj = project_onto_plane(desired, base1, normal)
         ax.scatter(*desired_proj, c='cyan', s=100, marker='x',
                    label='Desired Projected', linewidths=3)
+
+        # Draw circles around each base showing cable lengths to desired projected position
+        radius1_desired = np.linalg.norm(base1 - desired_proj)
+        radius2_desired = np.linalg.norm(base2 - desired_proj)
+        radius3_desired = np.linalg.norm(base3 - desired_proj)
+
+        draw_cable_circle(ax, base1, radius1_desired, normal, 'red', alpha=0.3, linestyle=':', linewidth=2)
+        draw_cable_circle(ax, base2, radius2_desired, normal, 'green', alpha=0.3, linestyle=':', linewidth=2)
+        draw_cable_circle(ax, base3, radius3_desired, normal, 'blue', alpha=0.3, linestyle=':', linewidth=2)
 
         # # Draw line from desired to its projection
         # ax.plot([desired[0], desired_proj[0]],
