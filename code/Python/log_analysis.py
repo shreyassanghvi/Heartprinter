@@ -59,6 +59,7 @@ def analyze_heart_printer_logs(log_content, log_file_path=None):
             'motor_2': {'current': [], 'desired': [], 'timestamps': [], 'positions': [], 'position_timestamps': []}
         },
         'in_plane_distance': [],  # Track in-plane distance over time
+        'arrival_timing': [],  # Track time to reach new desired positions (first arrival only)
         'errors_warnings': defaultdict(int),
         'performance_metrics': defaultdict(int)
     }
@@ -72,11 +73,15 @@ def analyze_heart_printer_logs(log_content, log_file_path=None):
     motor_tension_pattern = r'Motor (\d) (underload|overload)'
     safety_warning_pattern = r'Safety: Load cell (\d) (underload|overload)'
     daq_pattern = r'DAQ - Samples/Ch: \d+ - Avg\[Ch0\]:\s*([-\d.]+), Avg\[Ch1\]:\s*([-\d.]+), Avg\[Ch2\]:\s*([-\d.]+)'
-    # desired_position_pattern = r'(?:New desired position set|desired position set to centroid):\s*\(([-\d.]+),\s*([-\d.]+),\s*([-\d.]+)\)'
-    desired_position_pattern = r'Desired position:\s*\(([-\d.]+),\s*([-\d.]+),\s*([-\d.]+)\)'
+    # New format: "New desired position set: (139.378, -127.397, -75.158)"
+    # Old format: "Desired position: (x, y, z)"
+    desired_position_pattern = r'(?:New desired position set):\s*\(([-\d.]+),\s*([-\d.]+),\s*([-\d.]+)\)'
     current_position_pattern = r'Current position:\s*\(([-\d.]+),\s*([-\d.]+),\s*([-\d.]+)\)'
-    cable_pattern = r'Base (\d)\. Current cable length/step count:\s*([-\d.]+)/\d+'
-    desired_cable_pattern = r'Desired cable length/step count:\s*([-\d.]+)/\d+'
+    # New cable format: "Motor 0: curr=48.18mm, desired=47.64mm, full_delta=94, damped_delta=94 (100%)"
+    cable_pattern = r'Motor (\d):\s+curr=([-\d.]+)mm,\s+desired=([-\d.]+)mm'
+    # Legacy patterns (keeping for backwards compatibility)
+    legacy_cable_pattern = r'Base (\d)\. Current cable length/step count:\s*([-\d.]+)/\d+'
+    legacy_desired_cable_pattern = r'Desired cable length/step count:\s*([-\d.]+)/\d+'
     in_plane_pattern = r'In-plane distance \(projected desired to projected current\):\s*([-\d.]+)'
 
     # State detection patterns - based on actual log messages
@@ -114,6 +119,14 @@ def analyze_heart_printer_logs(log_content, log_file_path=None):
     current_cable_data = {'motor': None, 'current': None, 'desired': None, 'timestamp': None}
     pending_cable_updates = []
 
+    # Track arrival timing for new desired positions
+    awaiting_first_arrival = False
+    new_position_start_time = None
+    new_position_start_distance = None
+    new_position_coordinates = None
+    previous_state = 'UNKNOWN'
+    last_in_plane_distance = None  # Track most recent in-plane distance
+
     # Parse each line
     for line in lines:
         if not line.strip():
@@ -140,8 +153,43 @@ def analyze_heart_printer_logs(log_content, log_file_path=None):
             # Detect state transitions (e.g., "MOVE -> TENSE")
             transition_match = re.search(state_transition_pattern, message)
             if transition_match:
+                # Track previous and new states
+                previous_state = transition_match.group(1)
+                new_state = transition_match.group(2)
+
+                # Check if we've reached the destination (transition to RUN from MOVING or TENSE)
+                if new_state == 'RUN' and previous_state in ['MOVE', 'MOVING', 'TENSE', 'TENSION']:
+                    if awaiting_first_arrival and new_position_start_time:
+                        # Calculate time to reach
+                        try:
+                            start_dt = datetime.strptime(new_position_start_time, '%Y-%m-%d %H:%M:%S.%f')
+                            arrival_dt = datetime.strptime(current_time, '%Y-%m-%d %H:%M:%S.%f')
+                            time_to_reach_sec = (arrival_dt - start_dt).total_seconds()
+
+                            # Record the arrival
+                            arrival_record = {
+                                'position_set_time': new_position_start_time,
+                                'arrival_time': current_time,
+                                'time_to_reach_sec': time_to_reach_sec,
+                                'starting_distance_mm': new_position_start_distance,
+                                'target_position': new_position_coordinates,
+                                'error_magnitude_mm': last_in_plane_distance,  # Use in-plane distance as error
+                                'current_position': last_position,
+                                'desired_position': last_desired_position
+                            }
+                            summary['arrival_timing'].append(arrival_record)
+
+                            # Log for debugging
+                            if last_in_plane_distance is not None:
+                                pass  # Successfully captured in-plane distance
+
+                            # Reset flag - we've reached this position for the first time
+                            awaiting_first_arrival = False
+                        except (ValueError, TypeError):
+                            pass  # Handle timestamp parsing errors
+
                 # Update to the new state (second state in transition)
-                current_system_state = transition_match.group(2)
+                current_system_state = new_state
 
             # Detect system state from status updates
             state_match = re.search(status_state_pattern, message)
@@ -161,10 +209,12 @@ def analyze_heart_printer_logs(log_content, log_file_path=None):
                     })
 
                 # Extract the new magnitude value (this is the actual Cartesian error in mm)
-                mag_match = re.search(r'Error vector magnitude:\s*([\d.]+)', message)
+                # [2025-12-01 13:06:06.831] [I]:	In-plane distance (projected desired to projected current): 0.468
+                mag_match = re.search(r'In-plane distance \(projected desired to projected current\):\s*([\d.]+)', message)
                 if mag_match:
                     mag_value = float(mag_match.group(1))
                     last_error_magnitude = mag_value
+                    last_in_plane_distance = mag_value  # Also track specifically for arrivals
                     last_error_timestamp = current_time
                     last_error_state = current_system_state  # Store current state with error
                     # If magnitude is small (<= 1.5), consider position acceptable
@@ -344,6 +394,22 @@ def analyze_heart_printer_logs(log_content, log_file_path=None):
                 }
                 summary['desired_positions'].append(last_desired_position)
 
+                # Check if this is a NEW desired position (not just a status update)
+                if 'New desired position set' in message:
+                    # This is a new target - start tracking time to first arrival
+                    awaiting_first_arrival = True
+                    new_position_start_time = current_time
+                    new_position_coordinates = {'x': x, 'y': y, 'z': z}
+
+                    # Try to get starting distance from current position if available
+                    if last_position:
+                        dx = x - last_position['x']
+                        dy = y - last_position['y']
+                        dz = z - last_position['z']
+                        new_position_start_distance = (dx**2 + dy**2 + dz**2)**0.5
+                    else:
+                        new_position_start_distance = None
+
             # Current position tracking
             current_pos_match = re.search(current_position_pattern, message)
             if current_pos_match and current_time:
@@ -369,38 +435,54 @@ def analyze_heart_printer_logs(log_content, log_file_path=None):
                         'ch2': last_daq_readings[2]
                     })
 
-            # Cable length tracking
+            # Cable length tracking - NEW FORMAT: both current and desired on same line
             cable_match = re.search(cable_pattern, message)
             if cable_match and current_time:
                 motor_num = int(cable_match.group(1))
                 current_length = float(cable_match.group(2))
-                current_cable_data = {
-                    'motor': motor_num,
-                    'current': current_length,
-                    'desired': None,
-                    'timestamp': current_time
-                }
+                desired_length = float(cable_match.group(3))
 
-            # Desired cable length (follows current cable length)
-            desired_cable_match = re.search(desired_cable_pattern, message)
-            if desired_cable_match and current_cable_data['motor'] is not None:
-                desired_length = float(desired_cable_match.group(1))
-                current_cable_data['desired'] = desired_length
-
-                # Store cable data
-                motor_key = f"motor_{current_cable_data['motor']}"
+                # Store cable data immediately
+                motor_key = f"motor_{motor_num}"
                 if motor_key in summary['cable_tracking']:
-                    summary['cable_tracking'][motor_key]['current'].append(current_cable_data['current'])
-                    summary['cable_tracking'][motor_key]['desired'].append(current_cable_data['desired'])
-                    summary['cable_tracking'][motor_key]['timestamps'].append(current_cable_data['timestamp'])
+                    summary['cable_tracking'][motor_key]['current'].append(current_length)
+                    summary['cable_tracking'][motor_key]['desired'].append(desired_length)
+                    summary['cable_tracking'][motor_key]['timestamps'].append(current_time)
+            else:
+                # LEGACY FORMAT: current and desired on separate lines
+                legacy_cable_match = re.search(legacy_cable_pattern, message)
+                if legacy_cable_match and current_time:
+                    motor_num = int(legacy_cable_match.group(1))
+                    current_length = float(legacy_cable_match.group(2))
+                    current_cable_data = {
+                        'motor': motor_num,
+                        'current': current_length,
+                        'desired': None,
+                        'timestamp': current_time
+                    }
 
-                # Reset for next motor
-                current_cable_data = {'motor': None, 'current': None, 'desired': None, 'timestamp': None}
+                # Desired cable length (follows current cable length in legacy format)
+                legacy_desired_cable_match = re.search(legacy_desired_cable_pattern, message)
+                if legacy_desired_cable_match and current_cable_data['motor'] is not None:
+                    desired_length = float(legacy_desired_cable_match.group(1))
+                    current_cable_data['desired'] = desired_length
+
+                    # Store cable data
+                    motor_key = f"motor_{current_cable_data['motor']}"
+                    if motor_key in summary['cable_tracking']:
+                        summary['cable_tracking'][motor_key]['current'].append(current_cable_data['current'])
+                        summary['cable_tracking'][motor_key]['desired'].append(current_cable_data['desired'])
+                        summary['cable_tracking'][motor_key]['timestamps'].append(current_cable_data['timestamp'])
+
+                    # Reset for next motor
+                    current_cable_data = {'motor': None, 'current': None, 'desired': None, 'timestamp': None}
 
             # In-plane distance tracking
             in_plane_match = re.search(in_plane_pattern, message)
             if in_plane_match and current_time:
                 distance = float(in_plane_match.group(1))
+                last_in_plane_distance = distance  # Capture for arrival timing
+                last_error_magnitude = distance    # Also set as error magnitude
                 summary['in_plane_distance'].append({
                     'timestamp': current_time,
                     'distance': distance
@@ -596,6 +678,44 @@ def generate_report(summary):
         report.append(f"  - Total timing samples: {len(all_timings)}")
         report.append(f"  - Estimated control frequency: {1000/overall_avg:.1f} Hz")
 
+    # NEW: Position Arrival Timing Analysis
+    report.append("\n" + "=" * 40)
+    report.append("POSITION ARRIVAL TIMING (First Arrival)")
+    report.append("=" * 40)
+
+    arrival_data = summary.get('arrival_timing', [])
+    if arrival_data:
+        times_to_reach = [rec['time_to_reach_sec'] for rec in arrival_data]
+        distances = [rec['starting_distance_mm'] for rec in arrival_data if rec.get('starting_distance_mm') is not None]
+
+        avg_time = sum(times_to_reach) / len(times_to_reach)
+        max_time = max(times_to_reach)
+        min_time = min(times_to_reach)
+
+        report.append(f"\nTime to Reach New Positions:")
+        report.append(f"  - Total position arrivals: {len(arrival_data)}")
+        report.append(f"  - Average time: {avg_time:.2f} seconds")
+        report.append(f"  - Range: {min_time:.2f}s - {max_time:.2f}s")
+
+        if distances:
+            avg_dist = sum(distances) / len(distances)
+            report.append(f"\nStarting Distances:")
+            report.append(f"  - Average starting distance: {avg_dist:.1f} mm")
+            report.append(f"  - Records with distance data: {len(distances)}/{len(arrival_data)}")
+
+        # Categorize performance
+        if avg_time <= 2.0:
+            report.append(f"  - PERFORMANCE: EXCELLENT (avg < 2s)")
+        elif avg_time <= 5.0:
+            report.append(f"  - PERFORMANCE: GOOD (avg < 5s)")
+        elif avg_time <= 10.0:
+            report.append(f"  - PERFORMANCE: MODERATE (avg < 10s)")
+        else:
+            report.append(f"  - PERFORMANCE: SLOW (avg > 10s)")
+    else:
+        report.append("  No position arrival data recorded")
+        report.append("  (Requires 'New desired position set' log entries and state transitions to RUN)")
+
     # Error and Warning Summary
     report.append("\n" + "=" * 40)
     report.append("ERRORS AND WARNINGS SUMMARY")
@@ -698,61 +818,45 @@ def generate_report(summary):
 
 def generate_csv_from_summaries(summaries, output_csv_path):
     """
-    Generate a CSV file with all positional errors from multiple log analyses
+    Generate a CSV file with positional errors at first arrival to new desired positions
     """
     csv_rows = []
 
     for summary in summaries:
         log_file = summary.get('log_file_path', 'unknown')
 
-        # Process above threshold errors (rejected)
-        for error_data in summary['cartesian_errors']['above_threshold']:
-            timestamp_str = error_data['timestamp']
+        # Process arrival timing data (first arrival at new positions only)
+        for arrival_data in summary.get('arrival_timing', []):
+            timestamp_str = arrival_data['arrival_time']
             try:
                 dt = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S.%f')
                 unix_time = int(dt.timestamp())
             except:
                 unix_time = 0
 
-            csv_rows.append({
-                'log_file': os.path.basename(log_file),
-                'unix_timestamp': unix_time,
-                'datetime': timestamp_str,
-                'magnitude_mm': error_data['magnitude'],
-                'threshold_mm': error_data.get('threshold', 1.5),
-                'status': 'rejected',
-                'state': error_data.get('state', 'UNKNOWN'),
-                'current_x': error_data.get('current_x', ''),
-                'current_y': error_data.get('current_y', ''),
-                'current_z': error_data.get('current_z', ''),
-                'desired_x': error_data.get('desired_x', ''),
-                'desired_y': error_data.get('desired_y', ''),
-                'desired_z': error_data.get('desired_z', '')
-            })
+            # Extract position data
+            current_pos = arrival_data.get('current_position', {})
+            desired_pos = arrival_data.get('desired_position', {})
+            target_pos = arrival_data.get('target_position', {})
 
-        # Process below threshold errors (accepted)
-        for error_data in summary['cartesian_errors']['below_threshold']:
-            timestamp_str = error_data['timestamp']
-            try:
-                dt = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S.%f')
-                unix_time = int(dt.timestamp())
-            except:
-                unix_time = 0
+            # Use target_position if desired_position is not available
+            if not desired_pos and target_pos:
+                desired_pos = target_pos
 
             csv_rows.append({
                 'log_file': os.path.basename(log_file),
                 'unix_timestamp': unix_time,
-                'datetime': timestamp_str,
-                'magnitude_mm': error_data['magnitude'],
-                'threshold_mm': error_data.get('threshold', 1.5),
-                'status': 'accepted',
-                'state': error_data.get('state', 'UNKNOWN'),
-                'current_x': error_data.get('current_x', ''),
-                'current_y': error_data.get('current_y', ''),
-                'current_z': error_data.get('current_z', ''),
-                'desired_x': error_data.get('desired_x', ''),
-                'desired_y': error_data.get('desired_y', ''),
-                'desired_z': error_data.get('desired_z', '')
+                'position_set_time': arrival_data['position_set_time'],
+                'arrival_time': timestamp_str,
+                'time_to_reach_sec': arrival_data.get('time_to_reach_sec', ''),
+                'starting_distance_mm': arrival_data.get('starting_distance_mm', ''),
+                'error_magnitude_mm': arrival_data.get('error_magnitude_mm', ''),
+                'current_x': current_pos.get('x', '') if current_pos else '',
+                'current_y': current_pos.get('y', '') if current_pos else '',
+                'current_z': current_pos.get('z', '') if current_pos else '',
+                'desired_x': desired_pos.get('x', '') if desired_pos else '',
+                'desired_y': desired_pos.get('y', '') if desired_pos else '',
+                'desired_z': desired_pos.get('z', '') if desired_pos else ''
             })
 
     # Sort by unix timestamp
@@ -760,7 +864,8 @@ def generate_csv_from_summaries(summaries, output_csv_path):
 
     # Write CSV
     with open(output_csv_path, 'w', newline='') as csvfile:
-        fieldnames = ['log_file', 'unix_timestamp', 'datetime', 'magnitude_mm', 'threshold_mm', 'status', 'state',
+        fieldnames = ['log_file', 'unix_timestamp', 'position_set_time', 'arrival_time', 'time_to_reach_sec',
+                      'starting_distance_mm', 'error_magnitude_mm',
                       'current_x', 'current_y', 'current_z', 'desired_x', 'desired_y', 'desired_z']
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 
@@ -769,7 +874,7 @@ def generate_csv_from_summaries(summaries, output_csv_path):
             writer.writerow(row)
 
     print(f"CSV file generated: {output_csv_path}")
-    print(f"Total positional errors recorded: {len(csv_rows)}")
+    print(f"Total first arrivals recorded: {len(csv_rows)}")
 
 def generate_tension_graphs(summary, output_path):
     """
@@ -874,6 +979,7 @@ def generate_cable_tracking_graph(summary, output_path):
     """
     cable_data = summary.get('cable_tracking', {})
     in_plane_data = summary.get('in_plane_distance', [])
+    desired_positions = summary.get('desired_positions', [])
 
     # Check if we have cable tracking data
     has_data = any(cable_data.get(f'motor_{i}', {}).get('current', []) for i in range(3))
@@ -925,6 +1031,24 @@ def generate_cable_tracking_graph(summary, output_path):
         ax.set_ylabel(f'Motor {motor_idx}\nLength (mm)', fontweight='bold')
         ax.grid(True, alpha=0.3)
 
+        # Add desired position change markers
+        if desired_positions:
+            for i, pos_change in enumerate(desired_positions):
+                try:
+                    pos_time = datetime.strptime(pos_change['timestamp'], '%Y-%m-%d %H:%M:%S.%f')
+
+                    # Draw vertical line at position change time
+                    ax.axvline(x=pos_time, color='red', linestyle='--', linewidth=1.5, alpha=0.6)
+
+                    # Add text annotation for first few position changes (avoid clutter)
+                    if i < 3 and motor_idx == 0:  # Only annotate on first motor subplot
+                        pos_text = f"({pos_change['x']:.1f}, {pos_change['y']:.1f}, {pos_change['z']:.1f})"
+                        ax.text(pos_time, ax.get_ylim()[1] * 0.95, pos_text,
+                               rotation=90, fontsize=7, verticalalignment='top',
+                               color='red', alpha=0.8)
+                except (ValueError, KeyError):
+                    continue
+
         # Add motor positions on secondary y-axis
         position_timestamps_str = cable_data[motor_key].get('position_timestamps', [])
         motor_positions = cable_data[motor_key].get('positions', [])
@@ -942,18 +1066,26 @@ def generate_cable_tracking_graph(summary, output_path):
                     continue
 
             if position_timestamps:
-                # Create secondary y-axis for motor positions
-                ax2 = ax.twinx()
-                ax2.plot(position_timestamps, valid_positions, color='purple',
-                        linewidth=1.0, label='Motor Position', marker='^', markersize=2,
-                        alpha=0.5, linestyle='-.')
-                ax2.set_ylabel('Position (steps)', fontweight='bold', color='purple')
-                ax2.tick_params(axis='y', labelcolor='purple')
-
-                # Combine legends from both axes
+                # # Create secondary y-axis for motor positions
+                # ax2 = ax.twinx()
+                # ax2.plot(position_timestamps, valid_positions, color='purple',
+                #         linewidth=1.0, label='Motor Position', marker='^', markersize=2,
+                #         alpha=0.5, linestyle='-.')
+                # ax2.set_ylabel('Position (steps)', fontweight='bold', color='purple')
+                # ax2.tick_params(axis='y', labelcolor='purple')
+                #
+                # # Combine legends from both axes
                 lines1, labels1 = ax.get_legend_handles_labels()
-                lines2, labels2 = ax2.get_legend_handles_labels()
-                ax.legend(lines1 + lines2, labels1 + labels2, loc='upper right', fontsize=8)
+
+                # Add desired position marker to legend (only on first subplot)
+                if motor_idx == 0 and desired_positions:
+                    from matplotlib.lines import Line2D
+                    legend_elements = lines1 + [Line2D([0], [0], color='red', linestyle='--',
+                                                       linewidth=1.5, label='Desired Position Change')]
+                    labels_updated = labels1 + ['Desired Position Change']
+                    ax.legend(legend_elements, labels_updated, loc='upper right', fontsize=8)
+                else:
+                    ax.legend(lines1, labels1, loc='upper right', fontsize=8)
         else:
             ax.legend(loc='upper right', fontsize=8)
 
@@ -989,6 +1121,16 @@ def generate_cable_tracking_graph(summary, output_path):
             ax.set_ylabel('In-Plane\nDistance (mm)', fontweight='bold')
             ax.grid(True, alpha=0.3)
 
+            # Add desired position change markers
+            if desired_positions:
+                for i, pos_change in enumerate(desired_positions):
+                    try:
+                        pos_time = datetime.strptime(pos_change['timestamp'], '%Y-%m-%d %H:%M:%S.%f')
+                        # Draw vertical line at position change time
+                        ax.axvline(x=pos_time, color='red', linestyle='--', linewidth=1.5, alpha=0.6)
+                    except (ValueError, KeyError):
+                        continue
+
             # Add statistics
             avg_dist = sum(distances) / len(distances)
             max_dist = max(distances)
@@ -1012,6 +1154,149 @@ def generate_cable_tracking_graph(summary, output_path):
     print(f"Cable tracking graph saved to: {output_path}")
     if in_plane_data:
         print(f"  - {len(in_plane_data)} in-plane distance measurements")
+    if desired_positions:
+        print(f"  - Marked {len(desired_positions)} desired position change(s)")
+
+def generate_arrival_timing_chart(summary, output_path):
+    """
+    Generate chart showing time to reach new desired positions (first arrival only)
+    """
+    arrival_data = summary.get('arrival_timing', [])
+
+    if not arrival_data:
+        print("No arrival timing data available for graphing")
+        return
+
+    # Extract data
+    timestamps = []
+    times_to_reach = []
+
+    for record in arrival_data:
+        try:
+            dt = datetime.strptime(record['position_set_time'], '%Y-%m-%d %H:%M:%S.%f')
+            timestamps.append(dt)
+            times_to_reach.append(record['time_to_reach_sec'])
+        except (ValueError, KeyError):
+            continue
+
+    if not timestamps:
+        print("No valid arrival timing data to plot")
+        return
+
+    # Create figure with better size
+    fig, ax = plt.subplots(figsize=(14, 7))
+    fig.suptitle('Time to Reach New Desired Positions (First Arrival Only)', fontsize=16, fontweight='bold')
+
+    # Plot as stem plot (better for discrete events) or scatter with lines
+    if len(timestamps) > 1:
+        # Use plot with markers for better visibility
+        ax.plot(timestamps, times_to_reach, marker='o', markersize=10, linewidth=2,
+                color='#2ca02c', markerfacecolor='#2ca02c', markeredgecolor='white',
+                markeredgewidth=2, alpha=0.8, label='Time to Reach')
+    else:
+        # Single point - use scatter
+        ax.scatter(timestamps, times_to_reach, s=200, color='#2ca02c',
+                  edgecolors='white', linewidth=2, alpha=0.8, zorder=5)
+
+    # Add horizontal average line
+    avg_time = sum(times_to_reach) / len(times_to_reach)
+    ax.axhline(y=avg_time, color='red', linestyle='--', linewidth=2, alpha=0.7, label=f'Average: {avg_time:.2f}s')
+
+    # Styling
+    ax.set_ylabel('Time to Reach (seconds)', fontweight='bold', fontsize=12)
+    ax.set_xlabel('Time (when position was set)', fontweight='bold', fontsize=12)
+    ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
+    ax.set_facecolor('#f8f8f8')
+
+    # Add statistics box
+    max_time = max(times_to_reach)
+    min_time = min(times_to_reach)
+
+    stats_text = f'Sample Size: {len(times_to_reach)}\nAvg: {avg_time:.2f}s\nMin: {min_time:.2f}s\nMax: {max_time:.2f}s'
+    ax.text(0.02, 0.98, stats_text, transform=ax.transAxes,
+            fontsize=11, verticalalignment='top', family='monospace',
+            bbox=dict(boxstyle='round', facecolor='white', edgecolor='gray', alpha=0.9, pad=0.8))
+
+    # Add legend
+    if len(timestamps) > 1:
+        ax.legend(loc='upper right', fontsize=10, framealpha=0.9)
+
+    # Format x-axis with better spacing
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
+    plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
+
+    # Set y-axis to start at 0 for better perspective
+    ax.set_ylim(bottom=0, top=max_time * 1.15)
+
+    # Adjust layout and save
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=150, bbox_inches='tight')
+    plt.close()
+
+    print(f"Arrival timing chart saved to: {output_path}")
+    print(f"  - {len(arrival_data)} position arrivals recorded")
+    print(f"  - Average time to reach: {avg_time:.2f} seconds")
+
+def generate_distance_vs_time_chart(summary, output_path):
+    """
+    Generate scatter plot showing correlation between initial distance and time to reach
+    """
+    arrival_data = summary.get('arrival_timing', [])
+
+    if not arrival_data:
+        print("No arrival timing data available for graphing")
+        return
+
+    # Extract data (only records with starting distance)
+    distances = []
+    times_to_reach = []
+
+    for record in arrival_data:
+        if record.get('starting_distance_mm') is not None:
+            distances.append(record['starting_distance_mm'])
+            times_to_reach.append(record['time_to_reach_sec'])
+
+    if not distances:
+        print("No distance vs time data available (missing starting distances)")
+        return
+
+    # Create figure
+    fig, ax = plt.subplots(figsize=(10, 8))
+    fig.suptitle('Time to Reach vs. Initial Distance from Target', fontsize=16, fontweight='bold')
+
+    # Scatter plot
+    ax.scatter(distances, times_to_reach, s=100, alpha=0.6, c='#1f77b4', edgecolors='black', linewidth=1)
+    ax.set_xlabel('Initial Distance from Target (mm)', fontweight='bold')
+    ax.set_ylabel('Time to Reach (seconds)', fontweight='bold')
+    ax.grid(True, alpha=0.3)
+
+    # Add trend line if we have enough points
+    if len(distances) > 1:
+        import numpy as np
+        z = np.polyfit(distances, times_to_reach, 1)
+        p = np.poly1d(z)
+        x_trend = np.linspace(min(distances), max(distances), 100)
+        ax.plot(x_trend, p(x_trend), "r--", linewidth=2, alpha=0.7, label=f'Trend: y={z[0]:.3f}x{"+" if z[1] >=0 else z[1]:.2f}')
+        ax.legend()
+
+    # Add statistics
+    avg_distance = sum(distances) / len(distances)
+    avg_time = sum(times_to_reach) / len(times_to_reach)
+
+    stats_text = f'Sample size: {len(distances)}\nAvg distance: {avg_distance:.1f}mm\nAvg time: {avg_time:.2f}s'
+    ax.text(0.02, 0.98, stats_text, transform=ax.transAxes,
+            fontsize=10, verticalalignment='top',
+            bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.7))
+
+    # Adjust layout and save
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=150, bbox_inches='tight')
+    plt.close()
+
+    print(f"Distance vs time chart saved to: {output_path}")
+    print(f"  - {len(distances)} data points")
+    if len(distances) > 1:
+        print(f"  - Correlation: {z[0]:.3f} seconds per mm")
 
 # Example usage with your log file:
 if __name__ == "__main__":
@@ -1081,6 +1366,14 @@ if __name__ == "__main__":
             # Generate cable tracking graph
             cable_graph_file = os.path.join(output_dir, f"{log_basename}_cable_tracking.png")
             generate_cable_tracking_graph(summary, cable_graph_file)
+
+            # Generate arrival timing chart
+            arrival_timing_file = os.path.join(output_dir, f"{log_basename}_arrival_timing.png")
+            generate_arrival_timing_chart(summary, arrival_timing_file)
+
+            # Generate distance vs time chart
+            distance_time_file = os.path.join(output_dir, f"{log_basename}_distance_vs_time.png")
+            generate_distance_vs_time_chart(summary, distance_time_file)
 
             processed_count += 1
 
