@@ -1,4 +1,5 @@
 import sys
+import os
 import numpy as np
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QHBoxLayout, QVBoxLayout, QGridLayout, QLabel,
@@ -10,14 +11,16 @@ import pyqtgraph.opengl as gl
 from pyqtgraph.opengl import GLMeshItem, MeshData
 from multiprocessing import shared_memory
 import struct
+import subprocess
 
-from compute import (
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from core.compute import (
     MOTOR_STRUCT_FORMAT, MOTOR_STRUCT_SIZE,
     STATUS_STRUCT_FORMAT, STATUS_STRUCT_SIZE,
     compute_plane_mesh, validate_position, compute_heart_frame_transform
 )
-
-import subprocess
 
 class SyncableGLViewWidget(gl.GLViewWidget):
     cameraMoved = pyqtSignal(float, float)  # azimuth, elevation
@@ -619,10 +622,9 @@ class MainWindow(QWidget):
 
         # Run log analysis
         try:
-            import os
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            log_analysis_script = os.path.join(script_dir, "log_analysis.py")
-            log_glob_pattern = "../Cpp/logs/log*"
+            script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            log_analysis_script = os.path.join(script_dir, "tools", "log_analysis.py")
+            log_glob_pattern = "../../Cpp/logs/log*"
 
             subprocess.Popen([
                 sys.executable,
