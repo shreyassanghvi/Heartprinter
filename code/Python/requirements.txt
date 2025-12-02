@@ -1,0 +1,22 @@
+# Core scientific computing
+numpy>=1.20.0
+pandas>=1.3.0
+
+# GUI and visualization
+PyQt5>=5.15.0
+pyqtgraph>=0.12.0
+matplotlib>=3.4.0
+
+# Standard library dependencies (included with Python, listed for reference)
+# - struct (binary data)
+# - multiprocessing (shared memory)
+# - subprocess (process management)
+# - re (regex)
+# - datetime (time handling)
+# - collections (data structures)
+# - csv (CSV file handling)
+# - glob (file pattern matching)
+# - pathlib (path operations)
+# - sys (system functions)
+# - os (operating system interface)
+# - dataclasses (data classes)
