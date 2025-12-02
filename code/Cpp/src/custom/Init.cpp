@@ -18,6 +18,7 @@
 #include <sstream>
 #include <iostream>
 #include <signal.h>
+#include <atomic>
 
 #include <windows.h>
 #include <stdio.h>
@@ -30,16 +31,43 @@ namespace fs = std::filesystem;
 
 // Global pointer to SystemController for signal handler
 static SystemController* g_systemControllerForSignal = nullptr;
+static std::atomic<bool> g_shutdownInProgress(false);
 
-// Signal handler for Ctrl+C (SIGINT)
+// Signal handler for various termination signals
 void signalHandler(int signal) {
-    if (signal == SIGINT) {
-        spdlog::warn("SIGINT received (Ctrl+C) - initiating graceful shutdown...");
-        if (g_systemControllerForSignal) {
-            g_systemControllerForSignal->shutdown();
-        }
-        exit(0);
+    // Prevent re-entrant calls during shutdown
+    bool expected = false;
+    if (!g_shutdownInProgress.compare_exchange_strong(expected, true)) {
+        // Shutdown already in progress, just return
+        return;
     }
+
+    const char* signalName = "UNKNOWN";
+    switch (signal) {
+        case SIGINT:
+            signalName = "SIGINT (Ctrl+C)";
+            break;
+        case SIGTERM:
+            signalName = "SIGTERM (Termination request)";
+            break;
+        case SIGBREAK:
+            signalName = "SIGBREAK (Ctrl+Break)";
+            break;
+        case SIGABRT:
+            signalName = "SIGABRT (Abort)";
+            break;
+        default:
+            break;
+    }
+
+    spdlog::warn("{} received - initiating graceful shutdown...", signalName);
+
+    if (g_systemControllerForSignal) {
+        g_systemControllerForSignal->shutdown();
+    }
+
+    spdlog::info("Cleanup completed, exiting...");
+    exit(0);
 }
 
 bool getUserConfirmation(const std::string& prompt) {
@@ -152,8 +180,12 @@ int main(int argc, char *argv[]) {
     auto logger = create_dated_logger(true);
     spdlog::info("Heart Printer System starting...");
 
-    // Set up signal handler for graceful shutdown on Ctrl+C
-    signal(SIGINT, signalHandler);
+    // Set up signal handlers for graceful shutdown
+    signal(SIGINT, signalHandler);   // Ctrl+C
+    signal(SIGTERM, signalHandler);  // Termination request
+    signal(SIGBREAK, signalHandler); // Ctrl+Break (Windows)
+    signal(SIGABRT, signalHandler);  // Abort signal
+    spdlog::info("Signal handlers registered (SIGINT, SIGTERM, SIGBREAK, SIGABRT)");
 
     try {
         spdlog::info("Setting up config");
