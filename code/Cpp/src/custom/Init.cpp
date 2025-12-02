@@ -33,7 +33,60 @@ namespace fs = std::filesystem;
 static SystemController* g_systemControllerForSignal = nullptr;
 static std::atomic<bool> g_shutdownInProgress(false);
 
-// Signal handler for various termination signals
+#ifdef _WIN32
+// Windows console control handler for Ctrl+C, Ctrl+Break, and close events
+BOOL WINAPI consoleControlHandler(DWORD ctrlType) {
+    // DEBUG: Write to stderr immediately to see if handler is called
+    // Prevent re-entrant calls during shutdown
+    bool expected = false;
+    if (!g_shutdownInProgress.compare_exchange_strong(expected, true)) {
+        // Shutdown already in progress
+        fprintf(stderr, "*** Shutdown already in progress ***\n");
+        fflush(stderr);
+        return TRUE;
+    }
+
+    const char* eventName = "UNKNOWN";
+    switch (ctrlType) {
+        case CTRL_C_EVENT:
+            eventName = "Ctrl+C";
+            break;
+        case CTRL_BREAK_EVENT:
+            eventName = "Ctrl+Break";
+            break;
+        case CTRL_CLOSE_EVENT:
+            eventName = "Console Close";
+            break;
+        case CTRL_LOGOFF_EVENT:
+            eventName = "User Logoff";
+            break;
+        case CTRL_SHUTDOWN_EVENT:
+            eventName = "System Shutdown";
+            break;
+        default:
+            break;
+    }
+
+    spdlog::warn("{} received - initiating graceful shutdown...", eventName);
+
+    if (g_systemControllerForSignal) {
+        // If system controller exists, do graceful shutdown
+        g_systemControllerForSignal->shutdown();
+        spdlog::info("Cleanup completed, exiting...");
+        Sleep(1000);
+    } else {
+        // Called before system controller exists
+        spdlog::info("Shutdown requested during initialization, exiting...");
+        Sleep(100);
+    }
+
+    // Must exit the program, returning TRUE just tells Windows we handled it
+    // but doesn't stop the program
+    exit(0);
+}
+#endif
+
+// Signal handler for various termination signals (fallback for non-console signals)
 void signalHandler(int signal) {
     // Prevent re-entrant calls during shutdown
     bool expected = false;
@@ -91,7 +144,6 @@ bool getUserConfirmation(const std::string& prompt) {
 // Pre-initialization checklist
 // Returns true if all checks pass, false if user responds 'n' to any check
 bool runPreInitializationChecklist() {
-    // TODO: Fix this since it doesn't work unless we do a DEBUG build.
     std::cout << "Heart Printer Pre-Initialization Checklist" << std::endl;
 
     if (!getUserConfirmation("1. Is the power to the system on?")) {
@@ -176,16 +228,35 @@ std::shared_ptr<spdlog::logger> create_dated_logger(bool make_default) {
 
 //Init commit for Control loop code
 int main(int argc, char *argv[]) {
+// #ifdef _WIN32
+//     // Ensure console is attached (required for proper stdout/stderr when run from terminal)
+//     if (AttachConsole(ATTACH_PARENT_PROCESS) || AllocConsole()) {
+//         FILE* pFile = nullptr;
+//         freopen_s(&pFile, "CONOUT$", "w", stdout);
+//         freopen_s(&pFile, "CONOUT$", "w", stderr);
+//         freopen_s(&pFile, "CONIN$", "r", stdin);
+//     }
+// #endif
     // Set up logging
     auto logger = create_dated_logger(true);
     spdlog::info("Heart Printer System starting...");
 
     // Set up signal handlers for graceful shutdown
-    signal(SIGINT, signalHandler);   // Ctrl+C
+#ifdef _WIN32
+    // Use Windows console control handler (more reliable than signal() on Windows)
+    if (!SetConsoleCtrlHandler(consoleControlHandler, TRUE)) {
+        DWORD error = GetLastError();
+        spdlog::error("Failed to set console control handler! Error code: {}", error);
+    } else {
+        spdlog::info("Console control handler registered (Ctrl+C, Ctrl+Break, Close)");
+    }
+#endif
+
+    // Also register standard signal handlers as fallback
+    signal(SIGINT, signalHandler);   // Ctrl+C (fallback)
     signal(SIGTERM, signalHandler);  // Termination request
-    signal(SIGBREAK, signalHandler); // Ctrl+Break (Windows)
     signal(SIGABRT, signalHandler);  // Abort signal
-    spdlog::info("Signal handlers registered (SIGINT, SIGTERM, SIGBREAK, SIGABRT)");
+    spdlog::info("Signal handlers registered (SIGINT, SIGTERM, SIGABRT)");
 
     try {
         spdlog::info("Setting up config");
