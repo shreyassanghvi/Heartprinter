@@ -17,6 +17,8 @@
 #include <chrono>
 #include <sstream>
 #include <iostream>
+#include <signal.h>
+#include <atomic>
 
 #include <windows.h>
 #include <stdio.h>
@@ -26,6 +28,100 @@ namespace fs = std::filesystem;
 //user defined #define
 #define RECORD_CNT                          10000                 // Number of records to collect
 #define MOTOR_CNT                           3                  // Number of motors to control
+
+// Global pointer to SystemController for signal handler
+static SystemController* g_systemControllerForSignal = nullptr;
+static std::atomic<bool> g_shutdownInProgress(false);
+
+#ifdef _WIN32
+// Windows console control handler for Ctrl+C, Ctrl+Break, and close events
+BOOL WINAPI consoleControlHandler(DWORD ctrlType) {
+    // DEBUG: Write to stderr immediately to see if handler is called
+    // Prevent re-entrant calls during shutdown
+    bool expected = false;
+    if (!g_shutdownInProgress.compare_exchange_strong(expected, true)) {
+        // Shutdown already in progress
+        fprintf(stderr, "*** Shutdown already in progress ***\n");
+        fflush(stderr);
+        return TRUE;
+    }
+
+    const char* eventName = "UNKNOWN";
+    switch (ctrlType) {
+        case CTRL_C_EVENT:
+            eventName = "Ctrl+C";
+            break;
+        case CTRL_BREAK_EVENT:
+            eventName = "Ctrl+Break";
+            break;
+        case CTRL_CLOSE_EVENT:
+            eventName = "Console Close";
+            break;
+        case CTRL_LOGOFF_EVENT:
+            eventName = "User Logoff";
+            break;
+        case CTRL_SHUTDOWN_EVENT:
+            eventName = "System Shutdown";
+            break;
+        default:
+            break;
+    }
+
+    spdlog::warn("{} received - initiating graceful shutdown...", eventName);
+
+    if (g_systemControllerForSignal) {
+        // If system controller exists, do graceful shutdown
+        g_systemControllerForSignal->shutdown();
+        spdlog::info("Cleanup completed, exiting...");
+        Sleep(1000);
+    } else {
+        // Called before system controller exists
+        spdlog::info("Shutdown requested during initialization, exiting...");
+        Sleep(100);
+    }
+
+    // Must exit the program, returning TRUE just tells Windows we handled it
+    // but doesn't stop the program
+    exit(0);
+}
+#endif
+
+// Signal handler for various termination signals (fallback for non-console signals)
+void signalHandler(int signal) {
+    // Prevent re-entrant calls during shutdown
+    bool expected = false;
+    if (!g_shutdownInProgress.compare_exchange_strong(expected, true)) {
+        // Shutdown already in progress, just return
+        return;
+    }
+
+    const char* signalName = "UNKNOWN";
+    switch (signal) {
+        case SIGINT:
+            signalName = "SIGINT (Ctrl+C)";
+            break;
+        case SIGTERM:
+            signalName = "SIGTERM (Termination request)";
+            break;
+        case SIGBREAK:
+            signalName = "SIGBREAK (Ctrl+Break)";
+            break;
+        case SIGABRT:
+            signalName = "SIGABRT (Abort)";
+            break;
+        default:
+            break;
+    }
+
+    spdlog::warn("{} received - initiating graceful shutdown...", signalName);
+
+    if (g_systemControllerForSignal) {
+        g_systemControllerForSignal->shutdown();
+    }
+
+    spdlog::info("Cleanup completed, exiting...");
+    exit(0);
+}
 
 bool getUserConfirmation(const std::string& prompt) {
     std::string input;
@@ -132,9 +228,35 @@ std::shared_ptr<spdlog::logger> create_dated_logger(bool make_default) {
 
 //Init commit for Control loop code
 int main(int argc, char *argv[]) {
+// #ifdef _WIN32
+//     // Ensure console is attached (required for proper stdout/stderr when run from terminal)
+//     if (AttachConsole(ATTACH_PARENT_PROCESS) || AllocConsole()) {
+//         FILE* pFile = nullptr;
+//         freopen_s(&pFile, "CONOUT$", "w", stdout);
+//         freopen_s(&pFile, "CONOUT$", "w", stderr);
+//         freopen_s(&pFile, "CONIN$", "r", stdin);
+//     }
+// #endif
     // Set up logging
     auto logger = create_dated_logger(true);
     spdlog::info("Heart Printer System starting...");
+
+    // Set up signal handlers for graceful shutdown
+#ifdef _WIN32
+    // Use Windows console control handler (more reliable than signal() on Windows)
+    if (!SetConsoleCtrlHandler(consoleControlHandler, TRUE)) {
+        DWORD error = GetLastError();
+        spdlog::error("Failed to set console control handler! Error code: {}", error);
+    } else {
+        spdlog::info("Console control handler registered (Ctrl+C, Ctrl+Break, Close)");
+    }
+#endif
+
+    // Also register standard signal handlers as fallback
+    signal(SIGINT, signalHandler);   // Ctrl+C (fallback)
+    signal(SIGTERM, signalHandler);  // Termination request
+    signal(SIGABRT, signalHandler);  // Abort signal
+    spdlog::info("Signal handlers registered (SIGINT, SIGTERM, SIGABRT)");
 
     try {
         spdlog::info("Setting up config");
@@ -143,10 +265,12 @@ int main(int argc, char *argv[]) {
         config.deviceName = "COM4";  // Adjust for your system
         config.baudRate = 57600;
         config.enableSafetyChecks = true;
-        config.maxLoadVoltage = -0.02;
-        config.minLoadVoltage = -0.05;
-        config.tensionAdjustmentSteps = 25;
+        config.maxLoadVoltage = -0.01;
+        config.minLoadVoltage = -0.03;
+        config.tensionAdjustmentSteps = 50;
         config.trackingDeadband = 300.0;
+        config.posErrorThreshold = 1.0;
+        config.angleThreshold = 7.0;
 
         // Run pre-initialization checklist
         if (!runPreInitializationChecklist()) {
@@ -157,7 +281,10 @@ int main(int argc, char *argv[]) {
         // Create and initialize system controller
         spdlog::info("Construct systemcontroller");
         SystemController systemController(config);
-        
+
+        // Set global pointer for signal handler
+        g_systemControllerForSignal = &systemController;
+
         spdlog::info("Initializing system...");
         if (!systemController.initialize()) {
             spdlog::error("Failed to initialize system: {}", systemController.getLastError());
@@ -168,19 +295,25 @@ int main(int argc, char *argv[]) {
         
         // Run the main control loop
         systemController.run();
-        
+
+        // Clear global pointer before destruction
+        g_systemControllerForSignal = nullptr;
+
         // System will shut down automatically via RAII destructor
         spdlog::info("System execution completed");
         return EXIT_SUCCESS;
         
     } catch (const SystemException& e) {
-        spdlog::error("System exception: [{}] {}", 
+        g_systemControllerForSignal = nullptr;
+        spdlog::error("System exception: [{}] {}",
                      static_cast<int>(e.getErrorCode()), e.what());
         return EXIT_FAILURE;
     } catch (const std::exception& e) {
+        g_systemControllerForSignal = nullptr;
         spdlog::error("Unexpected exception: {}", e.what());
         return EXIT_FAILURE;
     } catch (...) {
+        g_systemControllerForSignal = nullptr;
         spdlog::error("Unknown exception occurred");
         return EXIT_FAILURE;
     }

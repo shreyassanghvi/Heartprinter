@@ -37,7 +37,7 @@ class SharedMemoryWriter(QWidget):
         # Status Dropdown
         self.status_label = QLabel("Status:")
         self.status_combo = QComboBox()
-        self.status_combo.addItems(["ready", "init"])
+        self.status_combo.addItems(["ready", "init", "run"])
         self.layout.addWidget(self.status_label)
         self.layout.addWidget(self.status_combo)
 

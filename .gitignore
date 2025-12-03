@@ -9,6 +9,7 @@
 *.ini
 *.txt
 *.log
+*.csv
 /code/Cpp/cmake-build-debug/
 /code/Cpp/.objects/
 /code/Cpp/build/

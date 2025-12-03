@@ -36,6 +36,7 @@ enum class States {
     READY,
     RUNNING,
     MOVING,
+    TENSION,
     ERR,
     END,
     CLEANUP
@@ -81,6 +82,10 @@ struct SystemConfig {
     int calibrationStabilityReads = 10;      // Number of consistent reads to detect base arrival
     double calibrationPositionTolerance = 5.0; // Position tolerance in motor units for stability detection
     int calibrationMovementSteps = 100;     // Number of motor steps to move during calibration base detection
+
+    // Position control configuration
+    double posErrorThreshold = 1.5;         // Position error threshold (mm) - transition to RUNNING when below this
+    double angleThreshold = 7.0;            // Angle threshold (degrees) - max angle between error vector and plane normal
 };
 
 // System status
@@ -114,6 +119,7 @@ private:
     
     // Current state
     States currentState = States::START;
+    States previousState = States::START;
     DOUBLE_POSITION_ANGLES_RECORD currentPosition = {};
     DOUBLE_POSITION_ANGLES_RECORD desiredPosition = {};
     std::string lastErrorMessage;
@@ -160,11 +166,13 @@ private:
 
     // Motor control methods from StateController
     bool readSharedMemoryCommand(MotorCommand& cmd);
+    bool validateMotorCommand(MotorCommand& cmd);
     void calculateMotorPositionsFromCommand(const MotorCommand& cmd);
     void calculateMotorPositionsFromTracking();
     bool moveMotorPositions();
     bool readMotorPositions();
     bool adjustTensionBasedOnLoadCells();
+    bool currentCloseToDesired();
 
     // Calibration methods
     bool validateProbes();
