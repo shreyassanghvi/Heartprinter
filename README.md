@@ -21,5 +21,5 @@ Dynamixel XC430-T150BB-T: [Link](https://www.robotis.us/dynamixel-xc430-t150bb-t
 - TrackStar 3D guidance tool: [Setup](https://github.com/shreyassanghvi/Heartprinter/blob/main/code/10006809-%203DG%20driveBAY-trakSTAR%20installation%20package%20R03.zip)
  
 ## Load Cell
-- CALT DYZL-107 Tension Sensor 5 KG : [Link](https://www.amazon.com/DYZL-107-Tension-Rollers-Measuring-Detecting/dp/B0BKKZVFMZ?sr=8-2)
+- CALT DYZL-107 Tension Sensor 2 KG : [Link](https://www.amazon.com/DYZL-107-Tension-Rollers-Measuring-Detecting/dp/B0BKL165PR?sr=8-2)
 - JY-S85 Load Cell Amplifier: [Link](https://www.amazon.com/FEGIANCHE-Current-Amplifier-Transmitter-Voltage/dp/B0DBD3DTYW?th=1)
