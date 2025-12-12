@@ -16,6 +16,7 @@ The testing dependencies include:
 - `pytest` - Testing framework
 - `pytest-qt` - PyQt5 testing plugin
 - `pytest-cov` - Coverage reporting
+- `pytest-mock` - Mocking support
 
 ## Running Tests
 
@@ -24,7 +25,7 @@ The testing dependencies include:
 From the `Python` directory:
 
 ```bash
-pytest Unit_Testing/ -v
+pytest test_gui/ -v
 ```
 
 Or run directly:
@@ -37,42 +38,42 @@ pytest
 
 ```bash
 # Run only component tests
-pytest Unit_Testing/test_gui_components.py -v
+pytest test_gui/test_gui_components.py -v
 
 # Run only edge case tests
-pytest Unit_Testing/test_edge_cases.py -v
+pytest test_gui/test_edge_cases.py -v
 ```
 
 ### Run Specific Test Classes
 
 ```bash
 # Test only OrientationAxes
-pytest Unit_Testing/test_gui_components.py::TestOrientationAxes -v
+pytest test_gui/test_gui_components.py::TestOrientationAxes -v
 
 # Test only MainWindow
-pytest Unit_Testing/test_gui_components.py::TestMainWindow -v
+pytest test_gui/test_gui_components.py::TestMainWindow -v
 
 # Test only SharedMemoryWriter
-pytest Unit_Testing/test_gui_components.py::TestSharedMemoryWriter -v
+pytest test_gui/test_gui_components.py::TestSharedMemoryWriter -v
 
 # Test only overflow and large values
-pytest Unit_Testing/test_edge_cases.py::TestOverflowAndLargeValues -v
+pytest test_gui/test_edge_cases.py::TestOverflowAndLargeValues -v
 
 # Test only boundary conditions
-pytest Unit_Testing/test_edge_cases.py::TestBoundaryConditions -v
+pytest test_gui/test_edge_cases.py::TestBoundaryConditions -v
 ```
 
 ### Run Specific Test Methods
 
 ```bash
 # Test a specific test method
-pytest Unit_Testing/test_gui_components.py::TestMainWindow::test_jog_axis -v
+pytest test_gui/test_gui_components.py::TestMainWindow::test_jog_axis -v
 ```
 
 ### Run with Coverage Report
 
 ```bash
-pytest Unit_Testing/ --cov=gui --cov-report=html
+pytest test_gui/ --cov=gui --cov-report=html
 ```
 
 This will generate an HTML coverage report in the `htmlcov/` directory.
@@ -80,7 +81,7 @@ This will generate an HTML coverage report in the `htmlcov/` directory.
 ### Run with Detailed Output
 
 ```bash
-pytest Unit_Testing/ -v -s
+pytest test_gui/ -v -s
 ```
 
 The `-s` flag shows print statements and other output during tests.
@@ -94,7 +95,7 @@ Python/
 ├── gui/                       # Source code
 │   ├── main.py
 │   └── test_interface.py
-├── Unit_Testing/              # Test code (centralized)
+├── test_gui/                  # Test code (centralized)
 │   ├── __init__.py
 │   ├── test_gui_components.py
 │   ├── test_edge_cases.py
@@ -312,7 +313,7 @@ To run tests in CI/CD pipelines:
 pip install -r requirements.txt
 
 # Run tests with coverage
-pytest Unit_Testing/ --cov=gui --cov-report=xml
+pytest test_gui/ --cov=gui --cov-report=xml
 
 # Generate coverage report
 coverage report -m

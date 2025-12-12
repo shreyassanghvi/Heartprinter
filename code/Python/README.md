@@ -34,7 +34,7 @@ code/Python/
 │   ├── visualize_positions.py
 │   ├── visualize_runs_with_bases.py
 │   └── position_error_calculation.py
-├── Unit_Testing/                   # Unit tests for GUI components
+├── test_gui/                       # Unit tests for GUI components
 │   ├── __init__.py
 │   ├── test_gui_components.py
 │   ├── test_edge_cases.py
@@ -164,7 +164,7 @@ tools/
 ├── visualize_positions.py (Standalone)
 └── visualize_runs_with_bases.py (Standalone)
 
-Unit_Testing/
+test_gui/
 ├── test_gui_components.py
 ├── test_edge_cases.py
 └── test_breaking_cases.py

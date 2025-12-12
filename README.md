@@ -117,6 +117,8 @@ Comprehensive documentation is organized as follows:
 
 ### Python GUI & Analysis
 - **[Python System README](code/Python/README.md)** - GUI and analysis tools documentation
+  - **[Unit Testing Guide](code/Python/test_gui/README.md)** - Comprehensive testing documentation (77 tests)
+  - **[Test Results Report](code/Python/test_gui/FINAL_TEST_REPORT.md)** - Detailed test analysis and known bugs
 
 ### Project Management
 - **[TAGS.md](TAGS.md)** - Git tagging strategy and version history
