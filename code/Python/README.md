@@ -32,7 +32,15 @@ code/Python/
 │   ├── __init__.py
 │   ├── log_analysis.py
 │   ├── visualize_positions.py
+│   ├── visualize_runs_with_bases.py
 │   └── position_error_calculation.py
+├── Unit_Testing/                   # Unit tests for GUI components
+│   ├── __init__.py
+│   ├── test_gui_components.py
+│   ├── test_edge_cases.py
+│   ├── test_breaking_cases.py
+│   ├── README.md
+│   └── FINAL_TEST_REPORT.md
 ├── README.md
 └── requirements.txt
 ```
@@ -153,7 +161,14 @@ tools/
 │   └── positional_errors_combined.csv
 │       └── position_error_calculation.py
 │           └── position_error_statistics.csv
-└── visualize_positions.py (Standalone)
+├── visualize_positions.py (Standalone)
+└── visualize_runs_with_bases.py (Standalone)
+
+Unit_Testing/
+├── test_gui_components.py
+├── test_edge_cases.py
+└── test_breaking_cases.py
+    └── All test GUI components using pytest
 ```
 
 ## Environment Setup and Installation
@@ -162,7 +177,7 @@ tools/
 
 - **Operating System:** Windows or Linux (macOS is **not supported** due to NIDAQmx hardware dependency)
 - **Python 3.8 or higher** - Download from [python.org](https://www.python.org/downloads/)
-  - During installation, make sure to check "Add Python to PATH"1
+  - During installation, make sure to check "Add Python to PATH"
 
 ### Step-by-Step Setup
 
@@ -271,11 +286,9 @@ pip install -r requirements.txt
 ```
 
 This will install:
-- numpy
-- pandas
-- PyQt5
-- pyqtgraph
-- matplotlib
+- **Core scientific computing:** numpy, pandas
+- **GUI and visualization:** PyQt5, pyqtgraph, matplotlib
+- **Testing dependencies:** pytest, pytest-qt, pytest-cov, pytest-mock
 
 **Installation time:** Approximately 2-5 minutes depending on your internet connection.
 

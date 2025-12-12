@@ -7,8 +7,11 @@ PyQt5>=5.15.0
 pyqtgraph>=0.12.0
 matplotlib>=3.4.0
 
-# Testing
+# Testing dependencies
 pytest>=7.0.0
+pytest-qt>=4.0.0
+pytest-cov>=3.0.0
+pytest-mock>=3.6.0
 
 # Standard library dependencies (included with Python, listed for reference)
 # - struct (binary data)
