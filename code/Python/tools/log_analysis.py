@@ -988,12 +988,24 @@ def generate_cable_tracking_graph(summary, output_path):
         print("No cable tracking data available for graphing")
         return
 
-    # Create figure with 4 subplots (3 motors + 1 in-plane distance)
-    fig, axes = plt.subplots(4, 1, figsize=(14, 12), sharex=True)
-    fig.suptitle('Cable Length Tracking and In-Plane Distance', fontsize=16, fontweight='bold')
+    # Create figure with 3 subplots (one for each motor with in-plane distance overlay)
+    fig, axes = plt.subplots(3, 1, figsize=(14, 10), sharex=True)
+    fig.suptitle('Cable Length Tracking with In-Plane Distance', fontsize=16, fontweight='bold')
 
     colors_current = ['#1f77b4', '#ff7f0e', '#2ca02c']  # Blue, Orange, Green
     colors_desired = ['#4a90e2', '#ff9f50', '#5fbf5f']  # Lighter versions
+
+    # Convert in-plane data for synchronization
+    in_plane_timestamps = []
+    in_plane_distances = []
+    if in_plane_data:
+        for data_point in in_plane_data:
+            try:
+                dt = datetime.strptime(data_point['timestamp'], '%Y-%m-%d %H:%M:%S.%f')
+                in_plane_timestamps.append(dt)
+                in_plane_distances.append(data_point['distance'])
+            except (ValueError, KeyError):
+                continue
 
     # Plot cable lengths for each motor
     for motor_idx in range(3):
@@ -1028,8 +1040,30 @@ def generate_cable_tracking_graph(summary, output_path):
         ax.plot(timestamps, desired_lengths, color=colors_desired[motor_idx],
                linewidth=1.5, label='Desired Length', linestyle='--', marker='s', markersize=2, alpha=0.7)
 
-        ax.set_ylabel(f'Motor {motor_idx}\nLength (mm)', fontweight='bold')
+        ax.set_ylabel(f'Motor {motor_idx}\nCable Length (mm)', fontsize=14, fontweight='bold')
         ax.grid(True, alpha=0.3)
+        ax.tick_params(axis='both', labelsize=14)
+
+        # Add in-plane distance on secondary y-axis (synchronized with cable data)
+        if in_plane_timestamps and in_plane_distances and timestamps:
+            # Filter in-plane data to only show points within the cable tracking time range
+            first_cable_time = timestamps[0]
+            last_cable_time = timestamps[-1]
+
+            filtered_in_plane_times = []
+            filtered_in_plane_dists = []
+            for ts, dist in zip(in_plane_timestamps, in_plane_distances):
+                if first_cable_time <= ts <= last_cable_time:
+                    filtered_in_plane_times.append(ts)
+                    filtered_in_plane_dists.append(dist)
+
+            if filtered_in_plane_times:
+                ax2 = ax.twinx()
+                ax2.plot(filtered_in_plane_times, filtered_in_plane_dists, color='#000000',
+                        linewidth=1.5, label='In-Plane Distance', marker='o', markersize=2,
+                        alpha=0.6, linestyle='-')
+                ax2.set_ylabel('In-Plane Distance (mm)', fontweight='bold', color='#d62728', fontsize=14)
+                ax2.tick_params(axis='y', labelcolor='#d62728', labelsize=14)
 
         # Add desired position change markers
         if desired_positions:
@@ -1039,112 +1073,33 @@ def generate_cable_tracking_graph(summary, output_path):
 
                     # Draw vertical line at position change time
                     ax.axvline(x=pos_time, color='red', linestyle='--', linewidth=1.5, alpha=0.6)
-
-                    # Add text annotation for first few position changes (avoid clutter)
-                    if i < 3 and motor_idx == 0:  # Only annotate on first motor subplot
-                        pos_text = f"({pos_change['x']:.1f}, {pos_change['y']:.1f}, {pos_change['z']:.1f})"
-                        ax.text(pos_time, ax.get_ylim()[1] * 0.95, pos_text,
-                               rotation=90, fontsize=7, verticalalignment='top',
-                               color='red', alpha=0.8)
                 except (ValueError, KeyError):
                     continue
 
-        # Add motor positions on secondary y-axis
-        position_timestamps_str = cable_data[motor_key].get('position_timestamps', [])
-        motor_positions = cable_data[motor_key].get('positions', [])
+        # Add legend (combine both axes if in-plane distance is present)
+        lines1, labels1 = ax.get_legend_handles_labels()
+        lines2, labels2 = [], []
+        if in_plane_timestamps and in_plane_distances and timestamps:
+            if filtered_in_plane_times:
+                lines2, labels2 = ax2.get_legend_handles_labels()
 
-        if position_timestamps_str and motor_positions:
-            # Convert position timestamps
-            position_timestamps = []
-            valid_positions = []
-            for ts_str, pos in zip(position_timestamps_str, motor_positions):
-                try:
-                    dt = datetime.strptime(ts_str, '%Y-%m-%d %H:%M:%S.%f')
-                    position_timestamps.append(dt)
-                    valid_positions.append(pos)
-                except ValueError:
-                    continue
-
-            if position_timestamps:
-                # # Create secondary y-axis for motor positions
-                # ax2 = ax.twinx()
-                # ax2.plot(position_timestamps, valid_positions, color='purple',
-                #         linewidth=1.0, label='Motor Position', marker='^', markersize=2,
-                #         alpha=0.5, linestyle='-.')
-                # ax2.set_ylabel('Position (steps)', fontweight='bold', color='purple')
-                # ax2.tick_params(axis='y', labelcolor='purple')
-                #
-                # # Combine legends from both axes
-                lines1, labels1 = ax.get_legend_handles_labels()
-
-                # Add desired position marker to legend (only on first subplot)
-                if motor_idx == 0 and desired_positions:
-                    from matplotlib.lines import Line2D
-                    legend_elements = lines1 + [Line2D([0], [0], color='red', linestyle='--',
-                                                       linewidth=1.5, label='Desired Position Change')]
-                    labels_updated = labels1 + ['Desired Position Change']
-                    ax.legend(legend_elements, labels_updated, loc='upper right', fontsize=8)
-                else:
-                    ax.legend(lines1, labels1, loc='upper right', fontsize=8)
+        # Add desired position marker to legend (only on first subplot)
+        if motor_idx == 0 and desired_positions:
+            from matplotlib.lines import Line2D
+            legend_elements = lines1 + lines2 + [Line2D([0], [0], color='red', linestyle='--',
+                                                   linewidth=1.5, label='Desired Position Change')]
+            labels_updated = labels1 + labels2 + ['Desired Position Change']
+            ax.legend(legend_elements, labels_updated, loc='upper right', fontsize=12)
         else:
-            ax.legend(loc='upper right', fontsize=8)
-
-        # Add statistics
-        if current_lengths and desired_lengths:
-            avg_current = sum(current_lengths) / len(current_lengths)
-            avg_desired = sum(desired_lengths) / len(desired_lengths)
-            avg_error = sum(abs(c - d) for c, d in zip(current_lengths, desired_lengths)) / len(current_lengths)
-
-            stats_text = f'Avg Current: {avg_current:.1f}mm\nAvg Desired: {avg_desired:.1f}mm\nAvg Error: {avg_error:.2f}mm'
-            ax.text(0.02, 0.98, stats_text, transform=ax.transAxes,
-                   fontsize=8, verticalalignment='top',
-                   bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.7))
-
-    # Plot in-plane distance on 4th subplot
-    if in_plane_data:
-        ax = axes[3]
-
-        timestamps = []
-        distances = []
-
-        for data_point in in_plane_data:
-            try:
-                dt = datetime.strptime(data_point['timestamp'], '%Y-%m-%d %H:%M:%S.%f')
-                timestamps.append(dt)
-                distances.append(data_point['distance'])
-            except (ValueError, KeyError):
-                continue
-
-        if timestamps:
-            ax.plot(timestamps, distances, color='#d62728', linewidth=1.5,
-                   marker='o', markersize=2, alpha=0.7)
-            ax.set_ylabel('In-Plane\nDistance (mm)', fontweight='bold')
-            ax.grid(True, alpha=0.3)
-
-            # Add desired position change markers
-            if desired_positions:
-                for i, pos_change in enumerate(desired_positions):
-                    try:
-                        pos_time = datetime.strptime(pos_change['timestamp'], '%Y-%m-%d %H:%M:%S.%f')
-                        # Draw vertical line at position change time
-                        ax.axvline(x=pos_time, color='red', linestyle='--', linewidth=1.5, alpha=0.6)
-                    except (ValueError, KeyError):
-                        continue
-
-            # Add statistics
-            avg_dist = sum(distances) / len(distances)
-            max_dist = max(distances)
-            min_dist = min(distances)
-
-            stats_text = f'Avg: {avg_dist:.2f}mm\nMin: {min_dist:.2f}mm\nMax: {max_dist:.2f}mm'
-            ax.text(0.02, 0.98, stats_text, transform=ax.transAxes,
-                   fontsize=8, verticalalignment='top',
-                   bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.7))
+            all_lines = lines1 + lines2
+            all_labels = labels1 + labels2
+            if all_lines:
+                ax.legend(all_lines, all_labels, loc='upper right', fontsize=12)
 
     # Format x-axis (time)
-    axes[-1].set_xlabel('Time', fontweight='bold')
+    axes[-1].set_xlabel('Time', fontweight='bold', fontsize=14)
     axes[-1].xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
-    plt.setp(axes[-1].xaxis.get_majorticklabels(), rotation=45, ha='right')
+    plt.setp(axes[-1].xaxis.get_majorticklabels(), rotation=45, ha='right', fontsize=14)
 
     # Adjust layout and save
     plt.tight_layout()

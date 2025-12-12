@@ -1,24 +1,80 @@
+# Compiled executables and binaries
 *.exe
-/.idea/
-/code/DynamixelSDK/
 *.o
 *.a
 *.so
 *.lo
 *.run
-*.ini
-*.txt
-*.log
-*.csv
+
+# IDE directories
+/.idea/
+/.vscode/
+/.vs/
+/code/Cpp/.vs/
+
+# Build directories
 /code/Cpp/cmake-build-debug/
 /code/Cpp/.objects/
 /code/Cpp/build/
+/code/Cpp/out/
+/code/Cpp/CMakeFiles/
+
+# External libraries
+/code/DynamixelSDK/
 /code/Cpp/example/
 /code/Cpp/trackstar_examples/
-/code/Cpp/.vs/
-/.vscode/
-/.vs/
-/code/Cpp/out/
+
+# Log files
+*.log
 /code/logs/
-/code/Cpp/CMakeFiles/
+/code/Cpp/logs/
+
+# Configuration files (may contain sensitive data)
+*.ini
+
+# Data files (analysis outputs)
+*.csv
+*.txt
+# But keep important documentation
+!README.md
+!requirements.txt
+!CMakeLists.txt
+
+# Python
 __pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# Python virtual environments
+.venv/
+venv/
+ENV/
+env/
+/code/Python/.venv/
+/code/Python/venv/
+
+# Analysis output directories
+/code/Python/analysis/
+/code/Python/tools/analysis/
+
+# Generated graphs and plots (from analysis tools)
+# Uncomment if you don't want to track PNG outputs
+# *.png
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
